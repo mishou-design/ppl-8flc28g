@@ -754,6 +754,65 @@
   }
 
 
+  function isDayDone(d, week) {
+    return liftsFor(d, week).some((lift, li) =>
+      Array.from({ length: lift.sets }, (_, si) => si).some((si) => (state.logs[logKey(d.id, week, li, si)] || {}).done)
+    );
+  }
+  const ROMAN = ["I", "II", "III", "IV", "V", "VI"];
+  const GODS = {
+    hub: { img: "./img/bg-hub.webp", color: "#4da3ff" },
+    phase1: { god: "Hephaestus", title: "The Forge", sub: "Lay the foundation. Build the base.", img: "./img/bg-phase1.webp", color: "#ff7a1a" },
+    phase2: { god: "Athena", title: "The Craft", sub: "Sharpen the work. Own every rep.", img: "./img/bg-phase2.webp", color: "#c9c3b0" },
+    phase3: { god: "Ares", title: "The Battle", sub: "Push the limit. Leave nothing.", img: "./img/bg-phase3.webp", color: "#e3263a" },
+    push: { god: "Atlas", img: "./img/bg-push.webp", color: "#9b5cff" },
+    pull: { god: "Poseidon", img: "./img/bg-pull.webp", color: "#2ad4c0" },
+    legs: { god: "Hermes", img: "./img/bg-legs.webp", color: "#f2c14e" },
+  };
+  const phaseGod = (weekInBlock) => GODS["phase" + (((weekInBlock - 1) % 3) + 1)];
+  function phaseLabel(week) {
+    const b = blockInfo(week);
+    return { roman: ROMAN[b.weekInBlock - 1] || String(b.weekInBlock), of: ROMAN[b.blockLen - 1] || String(b.blockLen), b };
+  }
+
+  // ---- Background layer: two stacked images that crossfade per section ----
+  let bgActive = 0, bgCurrent = "";
+  function setBg(key, preloadKeys) {
+    const g = GODS[key] || GODS.hub;
+    document.documentElement.style.setProperty("--god", g.color);
+    const layers = $$(".bg-img");
+    if (layers.length === 2 && bgCurrent !== g.img) {
+      bgCurrent = g.img;
+      const next = layers[1 - bgActive];
+      const show = () => {
+        next.style.backgroundImage = `url("${g.img}")`;
+        requestAnimationFrame(() => {
+          next.classList.add("on");
+          layers[bgActive].classList.remove("on");
+          bgActive = 1 - bgActive;
+        });
+      };
+      const im = new Image();
+      im.onload = im.onerror = show;
+      im.src = g.img;
+    }
+    (preloadKeys || []).forEach((k) => { if (GODS[k]) { const i = new Image(); i.src = GODS[k].img; } });
+  }
+
+  const HELD_QUOTES = [
+    ["No man is free who is not master of himself.", "Epictetus"],
+    ["Most powerful is he who has himself in his own power.", "Seneca"],
+    ["You have power over your mind, not outside events. Realize this, and you will find strength.", "Marcus Aurelius"],
+    ["Difficulties strengthen the mind, as labor does the body.", "Seneca"],
+    ["Fire tests gold; adversity tests the brave.", "Seneca"],
+    ["Persist and resist.", "Epictetus"],
+    ["What stands in the way becomes the way.", "Marcus Aurelius"],
+    ["Every habit is preserved and increased by corresponding actions.", "Epictetus"],
+    ["We suffer more often in imagination than in reality.", "Seneca"],
+    ["Waste no more time arguing what a good man should be. Be one.", "Marcus Aurelius"],
+    ["The soul becomes dyed with the color of its thoughts.", "Marcus Aurelius"],
+  ];
+
   const STOIC = [
     ["You have power over your mind, not outside events. Realize this, and you will find strength.", "Marcus Aurelius"],
     ["The impediment to action advances action. What stands in the way becomes the way.", "Marcus Aurelius"],
@@ -828,7 +887,7 @@
       saveWeek(state.week);
       const b = blockInfo(state.week);
       const fresh = b.weekInBlock === 1;
-      toast(`Week ${start} complete. Mission accomplished. Now Block ${b.block} • Week ${b.weekInBlock} of ${b.blockLen}` + (fresh ? " · New lifts" : "") + " · \u201C" + pick(STOIC)[0] + "\u201D");
+      toast(`Phase complete. Mission accomplished. Now Rotation ${b.block} • Phase ${ROMAN[b.weekInBlock - 1] || b.weekInBlock}` + (fresh ? " · New lifts" : "") + " · \u201C" + pick(STOIC)[0] + "\u201D");
     }
   }
 
@@ -850,7 +909,7 @@
   function blockLabelHtml(week) {
     const b = blockInfo(week);
     const isNew = b.weekInBlock === 1 && !(b.block === 1 && b.cycle === 1);
-    return `<span class="block-label">Block ${b.block} • Week ${b.weekInBlock} of ${b.blockLen}</span>` +
+    return `<span class="block-label">Rotation ${b.block} • Phase ${ROMAN[b.weekInBlock - 1] || b.weekInBlock} of ${ROMAN[b.blockLen - 1] || b.blockLen}</span>` +
       (isNew ? ` <span class="new-badge">New lifts!</span>` : "");
   }
 
@@ -1337,6 +1396,7 @@
           <div class="disc-marks">${marks}</div>
           ${st.pending ? "" : `<div class="disc-stats"><div><b>${st.month}</b><span>this month</span></div><div><b>${st.total}</b><span>all time</span></div><div><b>$${Math.round(st.saved)}</b><span>kept</span></div></div>`}
           <button type="button" class="btn-heavy disc-urge" id="disc-urge">${urgeLeft ? `Hold the line · ${mm}:${ss}` : "Urge? Hold 15 minutes"}</button>
+          <div class="disc-beaten"><b>${disc.urgesBeaten || 0}</b> urge${(disc.urgesBeaten || 0) === 1 ? "" : "s"} beaten</div>
           <div class="disc-settings">
             <label>Start <input type="date" id="disc-start" value="${esc(disc.start)}"></label>
             <label>$ / day <input type="number" inputmode="decimal" min="0" step="1" id="disc-per" value="${disc.perDay || ""}" placeholder="0"></label>
@@ -1358,6 +1418,7 @@
     $("#disc-urge").addEventListener("click", () => {
       if ((disc.urgeEnd || 0) > Date.now()) return;
       disc.urgeEnd = Date.now() + 15 * 60000; saveDisc(); vibrate(20); tickUrge();
+      try { if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {}); } catch (_) {}
       toast("Fifteen minutes. It peaks and passes. \u201CWe suffer more in imagination than in reality.\u201D");
     });
     if (urgeLeft) tickUrge();
@@ -1454,14 +1515,53 @@
   }
   function tickUrge() {
     clearTimeout(urgeTimer);
+    if (!(disc.urgeEnd > 0)) return;
     urgeTimer = setTimeout(() => {
-      const b = document.getElementById("disc-urge");
-      if (!b) return;
       const left = (disc.urgeEnd || 0) - Date.now();
-      if (left <= 0) { disc.urgeEnd = 0; saveDisc(); vibrate([120, 60, 120]); toast("It passed. You held."); renderDiscipline(); return; }
-      b.textContent = `Hold the line · ${String(Math.floor(left / 60000)).padStart(2, "0")}:${String(Math.floor((left % 60000) / 1000)).padStart(2, "0")}`;
+      if (left <= 0) { checkUrge(); return; }
+      const b = document.getElementById("disc-urge");
+      if (b) b.textContent = `Hold the line · ${String(Math.floor(left / 60000)).padStart(2, "0")}:${String(Math.floor((left % 60000) / 1000)).padStart(2, "0")}`;
       tickUrge();
     }, 1000);
+  }
+  // Fires once per timer: when it hits zero live, or when the app is reopened after it ran out.
+  function checkUrge() {
+    if (!(disc.urgeEnd > 0) || Date.now() < disc.urgeEnd) { if (disc.urgeEnd > 0) tickUrge(); return; }
+    disc.urgeEnd = 0;
+    disc.urgesBeaten = (disc.urgesBeaten || 0) + 1;
+    saveDisc();
+    vibrate([120, 60, 120]);
+    const [q, a] = pick(HELD_QUOTES);
+    showHeld(q, a);
+    try {
+      if ("Notification" in window && Notification.permission === "granted") {
+        const opts = { body: "\u201C" + q + "\u201D \u2014 " + a, tag: "arete-held", icon: "./icon-192.png", badge: "./icon-192.png" };
+        if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+          navigator.serviceWorker.ready.then((reg) => reg.showNotification("You held the line.", opts)).catch(() => {});
+        }
+      }
+    } catch (_) {}
+    renderDiscipline();
+  }
+  function showHeld(q, a) {
+    let o = document.getElementById("held");
+    if (o) o.remove();
+    o = document.createElement("div");
+    o.id = "held"; o.className = "held"; o.setAttribute("role", "dialog"); o.setAttribute("aria-modal", "true");
+    o.innerHTML = `<div class="held-inner">
+        <div class="held-ring" aria-hidden="true">✓</div>
+        <h2 class="held-title">You held the line.</h2>
+        <div class="held-rule" aria-hidden="true"></div>
+        <blockquote class="held-quote">\u201C${esc(q)}\u201D</blockquote>
+        <p class="held-author">${esc(a)}</p>
+        <p class="held-count"><b>${disc.urgesBeaten || 0}</b> beaten</p>
+        <button type="button" class="btn-heavy held-close">Onward</button>
+      </div>`;
+    document.body.appendChild(o);
+    requestAnimationFrame(() => o.classList.add("in"));
+    const close = () => { o.classList.remove("in"); setTimeout(() => o.remove(), 500); };
+    o.querySelector(".held-close").addEventListener("click", close);
+    o.addEventListener("click", (e) => { if (e.target === o) close(); });
   }
 
   function renderSettings() {
@@ -1507,46 +1607,100 @@
     window.scrollTo(0, 0);
   }
 
+  function setHeader(title, wordmark, back) {
+    $("#header-back").classList.toggle("hidden", !back);
+    $("#header-title").textContent = title;
+    $("#header-title").classList.toggle("wordmark", !!wordmark);
+    $("#header-badge").classList.add("hidden");
+    $("#header-gear").classList.toggle("hidden", !wordmark);
+  }
+
+  // The phase he's on: first week of this rotation not yet complete.
+  function currentPhaseWeek(b) {
+    for (let w = b.firstWeek; w <= b.lastWeek; w++) if (!isWeekComplete(w)) return w;
+    return 0;
+  }
+
   function renderHome() {
     renderStoic();
     showScreen("home");
-    $("#header-back").classList.add("hidden");
-    $("#header-title").textContent = "ARETE";
-    $("#header-title").classList.add("wordmark");
-    $("#header-badge").classList.add("hidden");
-    $("#header-gear").classList.remove("hidden");
+    setHeader("ARETE", true, false);
 
     const b = blockInfo(state.week);
+    const cur = currentPhaseWeek(b);
+    setBg("hub", [cur ? "phase" + (((cur - b.firstWeek) % 3) + 1) : "phase1"]);
     const banner = $("#block-banner");
     banner.innerHTML = `
-      <button type="button" class="block-nav" id="week-prev" aria-label="Previous week"${state.week <= 1 ? " disabled" : ""}>‹</button>
+      <button type="button" class="block-nav" id="week-prev" aria-label="Previous rotation"${b.firstWeek <= 1 ? " disabled" : ""}>‹</button>
       <div class="block-text">
-        <div class="block-title">${blockLabelHtml(state.week)}</div>
+        <div class="block-title">Rotation ${b.block}${b.cycle > 1 ? ` <span class="rot-cycle">· Cycle ${b.cycle}</span>` : ""}</div>
       </div>
-      <button type="button" class="block-nav" id="week-next" aria-label="Next week">›</button>`;
-    $("#week-prev").addEventListener("click", () => { setWeek(state.week - 1); renderHome(); });
-    $("#week-next").addEventListener("click", () => { setWeek(state.week + 1); renderHome(); });
+      <button type="button" class="block-nav" id="week-next" aria-label="Next rotation"${b.lastWeek >= MAX_WEEK ? " disabled" : ""}>›</button>`;
+    $("#week-prev").addEventListener("click", () => { setWeek(b.firstWeek - 1); renderHome(); });
+    $("#week-next").addEventListener("click", () => { setWeek(b.lastWeek + 1); renderHome(); });
 
     const grid = $("#day-grid");
-    grid.innerHTML = DAYS.map((d) => {
-      const lifts = liftsFor(d, state.week);
-      return `
-      <button class="day-card" data-day="${d.id}" type="button">
-        <div class="day-icon ${d.type}">${d.short}</div>
-        <div class="day-info">
-          <div class="name">${d.name}</div>
-          <div class="meta lead">${lifts[0].name}</div>
-        </div>
-        <div class="day-arrow">›</div>
-      </button>`;
-    }).join("");
-
-    $$(".day-card", grid).forEach((btn) => {
-      btn.addEventListener("click", () => openDay(btn.dataset.day));
-    });
+    grid.className = "phase-grid";
+    const tiles = [];
+    for (let w = b.firstWeek; w <= b.lastWeek; w++) {
+      const i = w - b.firstWeek + 1;
+      const g = phaseGod(i);
+      const done = isWeekComplete(w);
+      const st = done ? "done" : w === cur ? "current" : "upcoming";
+      const count = DAYS.filter((d) => isDayDone(d, w)).length;
+      tiles.push(`
+      <button class="phase-tile ${st}" data-week="${w}" type="button" style="--god:${g.color}">
+        <span class="phase-art" style="background-image:url('${g.img}')" aria-hidden="true"></span>
+        <span class="phase-num">${ROMAN[i - 1] || i}</span>
+        <span class="phase-info">
+          <span class="phase-name">Phase ${ROMAN[i - 1] || i} <em>${g.title}</em></span>
+          <span class="phase-god">${g.god}</span>
+          <span class="phase-sub">${st === "done" ? "Complete" : st === "current" ? `Now · ${count}/${DAYS.length} done` : count ? `${count}/${DAYS.length} done` : "Ahead"}</span>
+        </span>
+        <span class="phase-state" aria-hidden="true">${st === "done" ? "✓" : "›"}</span>
+      </button>`);
+    }
+    grid.innerHTML = tiles.join("");
+    $$(".phase-tile", grid).forEach((btn) => btn.addEventListener("click", () => openPhase(parseInt(btn.dataset.week, 10))));
     renderDiscipline();
     renderScreens();
     renderSettings();
+  }
+
+  function openPhase(week) {
+    setWeek(week);
+    history.replaceState(null, "", "#phase/" + state.week);
+    renderPhase();
+  }
+
+  function renderPhase() {
+    const w = state.week;
+    const { roman, b } = phaseLabel(w);
+    const g = phaseGod(b.weekInBlock);
+    showScreen("phase");
+    setHeader("Phase " + roman, false, true);
+    setBg("phase" + (((b.weekInBlock - 1) % 3) + 1), ["push", "pull", "legs"]);
+    const isNew = b.weekInBlock === 1 && !(b.block === 1 && b.cycle === 1);
+    $("#phase-hero").innerHTML = `
+      <div class="phase-hero-god">${g.god}</div>
+      <h2 class="phase-hero-title">${g.title}</h2>
+      <p class="phase-hero-sub">${g.sub}</p>
+      <div class="phase-hero-meta">Rotation ${b.block} · Phase ${roman} of ${ROMAN[b.blockLen - 1] || b.blockLen}${isNew ? ` <span class="new-badge">New lifts!</span>` : ""}</div>`;
+    const list = $("#phase-days");
+    list.innerHTML = DAYS.map((d) => {
+      const lifts = liftsFor(d, w);
+      const done = isDayDone(d, w);
+      return `
+      <button class="day-card${done ? " done" : ""}" data-day="${d.id}" type="button">
+        <div class="day-icon ${d.type}">${d.short}</div>
+        <div class="day-info">
+          <div class="name">${d.name}</div>
+          <div class="meta lead">${esc(lifts[0].name)}</div>
+        </div>
+        <div class="day-arrow">${done ? "✓" : "›"}</div>
+      </button>`;
+    }).join("");
+    $$(".day-card", list).forEach((btn) => btn.addEventListener("click", () => openDay(btn.dataset.day)));
   }
 
   function openDay(dayId) {
@@ -1690,19 +1844,21 @@
 
     const b = blockInfo(state.week);
     const lifts = liftsFor(day, state.week);
+    const sk = GODS[day.type] && GODS[day.type].img ? day.type : "phase" + (((b.weekInBlock - 1) % 3) + 1);
+    setBg(sk);
     $("#block-status").innerHTML = blockLabelHtml(state.week);
     const weekRow = $("#week-row");
     const weeks = [];
     for (let w = b.firstWeek; w <= b.lastWeek; w++) weeks.push(w);
     weekRow.innerHTML =
-      `<button type="button" class="week-btn block-jump" data-week="${b.firstWeek - 1}" aria-label="Previous block"${b.firstWeek <= 1 ? " disabled" : ""}>‹</button>` +
+      `<button type="button" class="week-btn block-jump" data-week="${b.firstWeek - 1}" aria-label="Previous rotation"${b.firstWeek <= 1 ? " disabled" : ""}>‹</button>` +
       weeks
         .map(
           (w) =>
-            `<button type="button" class="week-btn${w === state.week ? " active" : ""}" data-week="${w}">W${w}</button>`
+            `<button type="button" class="week-btn${w === state.week ? " active" : ""}" data-week="${w}" aria-label="Phase ${ROMAN[w - b.firstWeek] || w - b.firstWeek + 1}">${ROMAN[w - b.firstWeek] || w - b.firstWeek + 1}</button>`
         )
         .join("") +
-      `<button type="button" class="week-btn block-jump" data-week="${b.lastWeek + 1}" aria-label="Next block">›</button>`;
+      `<button type="button" class="week-btn block-jump" data-week="${b.lastWeek + 1}" aria-label="Next rotation">›</button>`;
     $$(".week-btn", weekRow).forEach((btn) => {
       btn.addEventListener("click", () => {
         setWeek(parseInt(btn.dataset.week, 10));
@@ -1840,6 +1996,9 @@
     document.addEventListener("pointerdown", ensureAudio);
     $("#header-back").addEventListener("click", () => {
       if (state.screen === "session") {
+        history.replaceState(null, "", "#phase/" + state.week);
+        renderPhase();
+      } else if (state.screen === "phase") {
         history.replaceState(null, "", location.pathname + location.search);
         renderHome();
       }
@@ -1854,13 +2013,18 @@
 
     const hash = (location.hash || "").replace(/^#/, "");
     const m = hash.match(/^session\/([\w-]+)/);
+    const mp = hash.match(/^phase\/(\d+)/);
     if (m && getDay(m[1])) {
       openDay(m[1]);
+    } else if (mp) {
+      openPhase(parseInt(mp[1], 10));
     } else {
       renderHome();
     }
     renderTimer();
     resyncTimer(true);
+    checkUrge();
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) checkUrge(); });
 
     const params = new URLSearchParams(location.search);
     if (params.get("demo") === "timer" && state.dayId) {

@@ -13,11 +13,12 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icon-192.png">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+  <link rel="preload" href="./img/cover.webp" as="image">
   <link rel="preload" href="./fonts/oswald-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="./fonts/cinzel-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="./fonts/cormorant-italic-latin.woff2" as="font" type="font/woff2" crossorigin>
   <title>ARETE</title>
-  <link rel="stylesheet" href="./styles.css?v=17">
+  <link rel="stylesheet" href="./styles.css?v=18">
 </head>
 <body>
   <div class="cover" id="cover" role="button" tabindex="0" aria-label="Enter ARETE">
@@ -31,6 +32,7 @@
       <p class="cover-tap">Tap to begin</p>
     </div>
   </div>
+  <div class="bg" aria-hidden="true"><div class="bg-img"></div><div class="bg-img"></div><div class="bg-shade"></div></div>
   <div class="stars" aria-hidden="true"></div>
   <div class="app">
     <header class="header">
@@ -55,6 +57,13 @@
           <div id="screens-card"></div>
           <div id="settings-card"></div>
         </div>
+      </div>
+    </section>
+
+    <section class="screen" data-screen="phase">
+      <div class="screen-body">
+        <div class="phase-hero" id="phase-hero"></div>
+        <div class="day-grid" id="phase-days"></div>
       </div>
     </section>
 
@@ -111,6 +120,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script src="./app.js?v=17"></script>
+  <script src="./app.js?v=18"></script>
 </body>
 </html>
