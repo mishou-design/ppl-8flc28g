@@ -1394,6 +1394,7 @@
         <div class="disc-body">
           <div class="disc-big">${st.pending ? "—" : st.streak}<small>${st.pending ? "not started" : "days strong"}</small></div>
           <div class="disc-marks">${marks}</div>
+          ${checkinDotsHtml()}
           ${st.pending ? "" : `<div class="disc-stats"><div><b>${st.month}</b><span>this month</span></div><div><b>${st.total}</b><span>all time</span></div><div><b>$${Math.round(st.saved)}</b><span>kept</span></div></div>`}
           <button type="button" class="btn-heavy disc-urge" id="disc-urge">${urgeLeft ? `Hold the line · ${mm}:${ss}` : "Urge? Hold 15 minutes"}</button>
           <div class="disc-beaten"><b>${disc.urgesBeaten || 0}</b> urge${(disc.urgesBeaten || 0) === 1 ? "" : "s"} beaten</div>
@@ -1415,14 +1416,18 @@
       disc.slips = (disc.slips || []).concat(todayIso()); saveDisc(); renderDiscipline();
       toast("Logged. Back at it tomorrow. \u201CNo great thing is created suddenly.\u201D");
     });
-    $("#disc-urge").addEventListener("click", () => {
-      if ((disc.urgeEnd || 0) > Date.now()) return;
-      disc.urgeEnd = Date.now() + 15 * 60000; saveDisc(); vibrate(20); tickUrge();
-      try { if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {}); } catch (_) {}
-      toast("Fifteen minutes. It peaks and passes. \u201CWe suffer more in imagination than in reality.\u201D");
-    });
+    $("#disc-urge").addEventListener("click", startUrge);
+    wireDots(el);
     if (urgeLeft) tickUrge();
     wireJournal();
+  }
+  function startUrge() {
+    {
+      if ((disc.urgeEnd || 0) > Date.now()) return;
+      disc.urgeEnd = Date.now() + 15 * 60000; saveDisc(); vibrate(20); tickUrge();
+      toast("Fifteen minutes. It peaks and passes. \u201CWe suffer more in imagination than in reality.\u201D");
+      renderDiscipline();
+    }
   }
   const TRIGGERS = ["Waking up", "After work", "Stress", "Boredom", "Gaming", "Grief", "Social", "Tired"];
   const PROMPTS = [
@@ -1466,7 +1471,7 @@
           <button type="button" class="btn-heavy" id="jr-save">${e.saved ? "Update today's log" : "Save today's log"}</button>
           ${entries.length ? `<div class="jr-hist">
             <div class="jr-sub">History</div>
-            ${entries.map(([d, x]) => `<details class="jr-entry"><summary><span>${fmt(d)}</span><span class="${x.clean === false ? "bad" : "good"}">${x.clean === false ? "Slip" : x.clean === true ? "Held" : "—"}</span><span>Urge ${x.craving ?? "–"} · Sleep ${x.sleep ?? "–"}${x.trained ? " · Trained" : ""}</span></summary>${(x.triggers || []).length ? `<div class="jr-tr">${esc(x.triggers.join(", "))}</div>` : ""}${x.text ? `<p>${esc(x.text).replace(/\n/g, "<br>")}</p>` : ""}</details>`).join("")}
+            ${entries.map(([d, x]) => `<details class="jr-entry"><summary><span>${fmt(d)}</span><span class="${x.clean === false ? "bad" : "good"}">${x.clean === false ? "Slip" : x.clean === true ? "Held" : "—"}</span><span>Urge ${x.craving ?? "–"} · Sleep ${x.sleep ?? "–"}${x.trained ? " · Trained" : ""}</span></summary>${(x.triggers || []).length ? `<div class="jr-tr">${esc(x.triggers.join(", "))}</div>` : ""}${x.text ? `<p>${esc(x.text).replace(/\n/g, "<br>")}</p>` : ""}${checkinText(x) ? `<div class="jr-tr">${esc(checkinText(x).trim()).replace(/\n\s*/g, "<br>")}</div>` : ""}</details>`).join("")}
             <button type="button" class="disc-slip" id="jr-copy">Copy log as text (for counseling)</button>
           </div>` : ""}
         </div>
@@ -1509,7 +1514,7 @@
     const cp = $("#jr-copy");
     if (cp) cp.addEventListener("click", () => {
       const txt = Object.entries(disc.log || {}).sort().map(([d, x]) =>
-        `${d} | ${x.clean === false ? "Slip" : x.clean === true ? "Held" : "-"} | urge ${x.craving ?? "-"} | sleep ${x.sleep ?? "-"} | trained ${x.trained ? "yes" : "no"}${(x.triggers || []).length ? " | triggers: " + x.triggers.join(", ") : ""}${x.text ? "\n  " + x.text.replace(/\n/g, "\n  ") : ""}`).join("\n");
+        `${d} | ${x.clean === false ? "Slip" : x.clean === true ? "Held" : "-"} | urge ${x.craving ?? "-"} | sleep ${x.sleep ?? "-"} | trained ${x.trained ? "yes" : "no"}${(x.triggers || []).length ? " | triggers: " + x.triggers.join(", ") : ""}${x.text ? "\n  " + x.text.replace(/\n/g, "\n  ") : ""}${checkinText(x)}`).join("\n");
       (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast("Copied. Paste it wherever you like."), () => toast("Couldn't copy on this phone."));
     });
   }
@@ -1535,7 +1540,7 @@
     showHeld(q, a);
     try {
       if ("Notification" in window && Notification.permission === "granted") {
-        const opts = { body: "\u201C" + q + "\u201D \u2014 " + a, tag: "arete-held", icon: "./icon-192.png", badge: "./icon-192.png" };
+        const opts = { body: "\u201C" + q + "\u201D \u2014 " + a, tag: "arete-held", icon: "./icon-192.png?v=19", badge: "./icon-192.png?v=19" };
         if (navigator.serviceWorker && navigator.serviceWorker.ready) {
           navigator.serviceWorker.ready.then((reg) => reg.showNotification("You held the line.", opts)).catch(() => {});
         }
@@ -1564,6 +1569,279 @@
     o.addEventListener("click", (e) => { if (e.target === o) close(); });
   }
 
+
+  // ---- Daily check-ins (private, this phone only) ----
+  const CHECKINS = [
+    { id: "morning", label: "Morning anchor", short: "AM", def: "07:00" },
+    { id: "after", label: "After work", short: "PM", def: "15:45" },
+    { id: "evening", label: "Evening review", short: "EVE", def: "20:30" },
+  ];
+  const CI_INTENT = ["Train", "Stay busy", "Hold strong", "Rest"];
+  const CI_REASONS = ["My people", "Health", "My old self"];
+  const CI_PLANS = ["Train now", "Walk", "Shower", "Call someone", "Eat", "Gaming"];
+  const CI_LINES = {
+    morning: [["At dawn, tell yourself: I am rising to do the work of a human being.", "Marcus Aurelius"], ["Begin at once to live.", "Seneca"], ["First say to yourself what you would be; then do what you have to do.", "Epictetus"]],
+    after: [["Most powerful is he who has himself in his own power.", "Seneca"], ["Persist and resist.", "Epictetus"], ["What stands in the way becomes the way.", "Marcus Aurelius"]],
+    evening: [["Every night, review the day. What did I do well? What can I do better?", "Seneca"], ["No great thing is created suddenly.", "Epictetus"], ["Confine yourself to the present.", "Marcus Aurelius"]],
+  };
+  function ciCfg() {
+    disc.checkins = disc.checkins || {};
+    const c = disc.checkins;
+    c.times = Object.assign({}, ...CHECKINS.map((k) => ({ [k.id]: k.def })), c.times || {});
+    c.enabled = Object.assign({}, ...CHECKINS.map((k) => ({ [k.id]: true })), c.enabled || {});
+    c.notified = c.notified || {};
+    return c;
+  }
+  const hm = (t) => { const [h, m] = String(t || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
+  const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
+  const fmtTime = (t) => { const m = hm(t); const h = Math.floor(m / 60), mm = m % 60; return `${((h + 11) % 12) + 1}:${String(mm).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
+  function ciToday(date) { const l = (disc.log || {})[date || todayIso()] || {}; return l.checkins || {}; }
+  function ciDone(id, date) { return !!(ciToday(date)[id] || {}).done; }
+  // The check-in whose window we're in: its time has passed and the next enabled one hasn't started.
+  function dueCheckin() {
+    const c = ciCfg(), n = nowMin();
+    const on = CHECKINS.filter((k) => c.enabled[k.id]).sort((a, b) => hm(c.times[a.id]) - hm(c.times[b.id]));
+    let cur = null;
+    on.forEach((k) => { if (n >= hm(c.times[k.id])) cur = k; });
+    return cur && !ciDone(cur.id) ? cur : null;
+  }
+  function checkinDotsHtml() {
+    const c = ciCfg(), due = dueCheckin();
+    return `<div class="ci-dots" aria-label="Today's check-ins">${CHECKINS.map((k) => {
+      const done = ciDone(k.id), off = !c.enabled[k.id];
+      return `<button type="button" class="ci-dot${done ? " done" : ""}${due && due.id === k.id ? " due" : ""}${off ? " off" : ""}" data-ci="${k.id}"><i>${done ? "✓" : ""}</i><span>${k.short}</span></button>`;
+    }).join("")}</div>`;
+  }
+  function wireDots(root) {
+    $$(".ci-dot", root).forEach((b) => b.addEventListener("click", () => openCheckin(b.dataset.ci)));
+  }
+  function renderCheckinBanner() {
+    const el = document.getElementById("checkin-banner");
+    if (!el) return;
+    const due = dueCheckin();
+    if (!due || state.screen !== "home") { el.innerHTML = ""; el.hidden = true; return; }
+    el.hidden = false;
+    el.innerHTML = `<button type="button" class="ci-banner" id="ci-open"><span class="ci-pulse" aria-hidden="true"></span><span class="ci-b-text"><b>Check-in due</b> · ${due.label}</span><span class="ci-b-arrow">›</span></button>`;
+    $("#ci-open").addEventListener("click", () => openCheckin(due.id));
+  }
+  function checkinText(x) {
+    const ci = (x && x.checkins) || {};
+    const parts = [];
+    if (ci.morning && ci.morning.done) parts.push(`morning: sleep ${ci.morning.sleep ?? "-"}${ci.morning.intent ? ", intention " + ci.morning.intent : ""}${(ci.morning.reasons || []).length ? ", reason " + ci.morning.reasons.join(", ") : ""}`);
+    if (ci.after && ci.after.done) parts.push(`after work: urge ${ci.after.urge ?? "-"}${(ci.after.plan || []).length ? ", plan " + ci.after.plan.join(", ") : ""}`);
+    if (ci.evening && ci.evening.done) parts.push(`evening: ${ci.evening.clean === false ? "slipped" : "held"}, peak ${ci.evening.peak ?? "-"}, trained ${ci.evening.trained ? "yes" : "no"}${ci.evening.note ? ", note: " + ci.evening.note : ""}`);
+    return parts.length ? "\n  check-ins: " + parts.join(" | ") : "";
+  }
+
+  function chipRow(name, opts, sel, multi) {
+    return `<div class="jr-chips" data-group="${name}"${multi ? ' data-multi="1"' : ""}>${opts.map((o) => `<button type="button" class="jr-chip${(multi ? (sel || []).includes(o) : sel === o) ? " on" : ""}" data-v="${esc(o)}">${esc(o)}</button>`).join("")}</div>`;
+  }
+  function openCheckin(id) {
+    const k = CHECKINS.find((x) => x.id === id) || CHECKINS[0];
+    const date = todayIso();
+    disc.log = disc.log || {};
+    const day = disc.log[date] || {};
+    const prev = (day.checkins || {})[k.id] || {};
+    const d = Object.assign({}, prev);
+    const [q, a] = CI_LINES[k.id][dayNum(date) % CI_LINES[k.id].length];
+    let body = "";
+    if (k.id === "morning") {
+      d.sleep = d.sleep ?? day.sleep ?? 6; d.reasons = d.reasons || [];
+      body = `
+        <label class="jr-range">How did you sleep? <b class="ci-v" data-for="sleep">${d.sleep}</b>
+          <input type="range" min="0" max="10" step="1" data-k="sleep" value="${d.sleep}"></label>
+        <div class="jr-sub">Today's intention</div>${chipRow("intent", CI_INTENT, d.intent, false)}
+        <div class="jr-sub">My reason today</div>${chipRow("reasons", CI_REASONS, d.reasons, true)}`;
+    } else if (k.id === "after") {
+      d.urge = d.urge ?? 0; d.plan = d.plan || [];
+      const live = (disc.urgeEnd || 0) > Date.now();
+      body = `
+        <label class="jr-range">Urge right now <b class="ci-v" data-for="urge">${d.urge}</b>
+          <input type="range" min="0" max="10" step="1" data-k="urge" value="${d.urge}"></label>
+        <div class="jr-sub">The plan for the next hour</div>${chipRow("plan", CI_PLANS, d.plan, true)}
+        <button type="button" class="btn-heavy ci-hold" id="ci-hold"${live ? " disabled" : ""}>${live ? "Holding the line…" : "Hold the line · 15 min"}</button>`;
+    } else {
+      d.clean = d.clean ?? day.clean; d.peak = d.peak ?? day.craving ?? 0; d.trained = d.trained ?? !!day.trained;
+      body = `
+        <div class="jr-seg" role="group">
+          <button type="button" class="jr-opt${d.clean === true ? " on" : ""}" data-clean="1">Held strong</button>
+          <button type="button" class="jr-opt${d.clean === false ? " on slip" : ""}" data-clean="0">Slipped</button>
+        </div>
+        <label class="jr-range">Urge peak today <b class="ci-v" data-for="peak">${d.peak}</b>
+          <input type="range" min="0" max="10" step="1" data-k="peak" value="${d.peak}"></label>
+        <div class="jr-seg"><button type="button" class="jr-opt${d.trained ? " on" : ""}" id="ci-trained">Trained today</button></div>
+        <input type="text" class="ci-note" id="ci-note" maxlength="140" placeholder="One line about today…" value="${esc(d.note || "")}">`;
+    }
+    closeCheckin(true);
+    const o = document.createElement("div");
+    o.className = "ci-wrap"; o.id = "ci-wrap";
+    o.innerHTML = `<div class="ci-back"></div>
+      <div class="ci-sheet jr" role="dialog" aria-modal="true" aria-labelledby="ci-title">
+        <div class="sheet-handle"></div>
+        <div class="ci-head"><div><div class="ci-kicker">${fmtTime(ciCfg().times[k.id])} check-in</div><h2 class="ci-title" id="ci-title">${k.label}</h2></div>
+          <button type="button" class="sheet-close" id="ci-x" aria-label="Close">✕</button></div>
+        <blockquote class="ci-quote">\u201C${esc(q)}\u201D <span>— ${esc(a)}</span></blockquote>
+        ${body}
+        <button type="button" class="btn-heavy ci-save" id="ci-save">${prev.done ? "Update ✓" : "Done ✓"}</button>
+      </div>`;
+    document.body.appendChild(o);
+    document.body.classList.add("ci-open");
+    requestAnimationFrame(() => o.classList.add("in"));
+    o.querySelector(".ci-back").addEventListener("click", () => closeCheckin());
+    $("#ci-x").addEventListener("click", () => closeCheckin());
+    $$("input[type=range]", o).forEach((r) => r.addEventListener("input", () => { d[r.dataset.k] = +r.value; o.querySelector(`.ci-v[data-for="${r.dataset.k}"]`).textContent = r.value; }));
+    $$(".jr-chips", o).forEach((g) => $$(".jr-chip", g).forEach((b) => b.addEventListener("click", () => {
+      const key = g.dataset.group, v = b.dataset.v;
+      if (g.dataset.multi) { const arr = d[key] = d[key] || []; const i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); b.classList.toggle("on", i < 0); }
+      else { d[key] = d[key] === v ? undefined : v; $$(".jr-chip", g).forEach((x) => x.classList.toggle("on", x.dataset.v === d[key])); }
+      vibrate(10);
+    })));
+    $$("[data-clean]", o).forEach((b) => b.addEventListener("click", () => {
+      d.clean = b.dataset.clean === "1";
+      $$("[data-clean]", o).forEach((x) => x.classList.remove("on", "slip"));
+      b.classList.add("on"); if (!d.clean) b.classList.add("slip"); vibrate(10);
+    }));
+    const tr = $("#ci-trained");
+    if (tr) tr.addEventListener("click", () => { d.trained = !d.trained; tr.classList.toggle("on", d.trained); vibrate(10); });
+    const hold = $("#ci-hold");
+    if (hold) hold.addEventListener("click", () => { startUrge(); hold.disabled = true; hold.textContent = "Holding the line…"; });
+    $("#ci-save").addEventListener("click", () => {
+      const note = $("#ci-note");
+      if (note) d.note = note.value.trim();
+      d.done = true; d.at = Date.now();
+      const entry = disc.log[date] = disc.log[date] || {};
+      entry.checkins = entry.checkins || {};
+      entry.checkins[k.id] = d;
+      // Feed the existing daily log so history + export stay in one place.
+      if (k.id === "morning") entry.sleep = d.sleep;
+      if (k.id === "after") entry.craving = Math.max(entry.craving || 0, d.urge || 0);
+      if (k.id === "evening") {
+        disc.slips = disc.slips || [];
+        const wasSlip = entry.clean === false;
+        if (d.clean !== undefined) entry.clean = d.clean;
+        entry.craving = d.peak; entry.trained = !!d.trained; entry.saved = true;
+        if (d.note && !(entry.text || "").includes(d.note)) entry.text = (entry.text ? entry.text + "\n" : "") + d.note;
+        if (entry.clean === false && !disc.slips.includes(date)) disc.slips.push(date);
+        if (entry.clean === true && wasSlip) disc.slips = disc.slips.filter((x) => x !== date);
+      }
+      saveDisc(); vibrate(20);
+      closeCheckin();
+      toast(k.id === "evening" ? (d.clean === false ? "Logged. Not a reset. Tomorrow we go again." : "Day logged. Rest well.") : `${k.label} ✓`);
+      renderDiscipline(); renderCheckinBanner();
+    });
+  }
+  function closeCheckin(instant) {
+    const o = document.getElementById("ci-wrap");
+    document.body.classList.remove("ci-open");
+    if (!o) return;
+    if (instant) { o.remove(); return; }
+    o.classList.remove("in"); setTimeout(() => o.remove(), 400);
+  }
+
+  // Reminders: banner + optional local notification when due; schedule ahead where the browser supports triggers.
+  function ciNotifyIfDue() {
+    const due = dueCheckin();
+    if (!due) return;
+    const c = ciCfg(), key = todayIso() + "|" + due.id;
+    if (c.notified[key]) return;
+    c.notified[key] = 1;
+    Object.keys(c.notified).forEach((x) => { if (x.slice(0, 10) < todayIso()) delete c.notified[x]; });
+    saveDisc();
+    if (!document.hidden) return; // he's looking at the banner already
+    swNotify("ARETE · " + due.label, { body: "Check-in due. Tap to open.", tag: "arete-ci-" + due.id, data: { url: "./#checkin" } });
+  }
+  function swNotify(title, opts) {
+    try {
+      if (!("Notification" in window) || Notification.permission !== "granted" || !navigator.serviceWorker) return;
+      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, Object.assign({ icon: "./icon-192.png?v=19", badge: "./icon-192.png?v=19" }, opts))).catch(() => {});
+    } catch (_) {}
+  }
+  function ciSchedule() {
+    try {
+      if (!("Notification" in window) || Notification.permission !== "granted" || !navigator.serviceWorker) return;
+      if (typeof TimestampTrigger === "undefined" || !("showTrigger" in Notification.prototype)) return;
+      const c = ciCfg();
+      navigator.serviceWorker.ready.then(async (reg) => {
+        const old = await reg.getNotifications({ includeTriggered: false }).catch(() => []);
+        old.forEach((n) => { if (/^arete-ci-/.test(n.tag)) n.close(); });
+        const base = new Date(); base.setHours(0, 0, 0, 0);
+        for (let dd = 0; dd < 3; dd++) CHECKINS.forEach((k) => {
+          if (!c.enabled[k.id]) return;
+          const ts = base.getTime() + dd * 86400000 + hm(c.times[k.id]) * 60000;
+          if (ts <= Date.now() + 30000) return;
+          reg.showNotification("ARETE · " + k.label, { body: "Check-in due. Tap to open.", tag: "arete-ci-" + k.id + "-" + dd, icon: "./icon-192.png?v=19", data: { url: "./#checkin" }, showTrigger: new TimestampTrigger(ts) }).catch(() => {});
+        });
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
+  // Calendar file: three daily repeating reminders.
+  function buildIcs() {
+    const c = ciCfg();
+    const pad = (n) => String(n).padStart(2, "0");
+    const d = new Date();
+    const ymd = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+    const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
+    const url = "https://mishou-design.github.io/ppl-8flc28g/#checkin";
+    const L = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//ARETE//Check-ins//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "X-WR-CALNAME:ARETE",
+      "BEGIN:VTIMEZONE", "TZID:America/Chicago",
+      "BEGIN:DAYLIGHT", "TZOFFSETFROM:-0600", "TZOFFSETTO:-0500", "TZNAME:CDT", "DTSTART:19700308T020000", "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU", "END:DAYLIGHT",
+      "BEGIN:STANDARD", "TZOFFSETFROM:-0500", "TZOFFSETTO:-0600", "TZNAME:CST", "DTSTART:19701101T020000", "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU", "END:STANDARD",
+      "END:VTIMEZONE"];
+    CHECKINS.forEach((k) => {
+      if (!c.enabled[k.id]) return;
+      const m = hm(c.times[k.id]);
+      L.push("BEGIN:VEVENT", `UID:arete-checkin-${k.id}@mishou-design.github.io`, `DTSTAMP:${stamp}`,
+        `DTSTART;TZID=America/Chicago:${ymd}T${pad(Math.floor(m / 60))}${pad(m % 60)}00`, "DURATION:PT10M", "RRULE:FREQ=DAILY",
+        `SUMMARY:ARETE · ${k.label}`, `DESCRIPTION:Check-in time. Open ARETE: ${url}`, `URL:${url}`, "TRANSP:TRANSPARENT",
+        "BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:ARETE · ${k.label}`, "TRIGGER:PT0S", "END:VALARM", "END:VEVENT");
+    });
+    L.push("END:VCALENDAR");
+    const fold = (l) => { let out = ""; while (l.length > 70) { out += l.slice(0, 70) + "\r\n "; l = l.slice(70); } return out + l; };
+    return L.map(fold).join("\r\n") + "\r\n";
+  }
+  function downloadIcs() {
+    const ics = buildIcs();
+    const standalone = window.navigator.standalone === true || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
+    if (standalone && /iP(hone|ad|od)/.test(navigator.userAgent)) {
+      location.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(ics);
+      return;
+    }
+    const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = "arete-checkins.ics";
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+    toast("Calendar file ready. Open it to add the reminders.");
+  }
+  function checkinSettingsHtml() {
+    const c = ciCfg();
+    const notif = !("Notification" in window) ? "unsupported" : Notification.permission;
+    return `
+        <div class="setting-row ci-set-head"><div class="mob-text"><div class="mob-name">Daily check-ins</div>
+          <div class="mob-cue">Three quick check-ins. Private, this phone only.</div></div></div>
+        ${CHECKINS.map((k) => `
+        <div class="setting-row ci-set">
+          <div class="mob-text"><div class="mob-name">${k.label}</div></div>
+          <input type="time" class="ci-time" data-ci="${k.id}" value="${esc(c.times[k.id])}" aria-label="${k.label} time">
+          <input type="checkbox" class="switch ci-en" data-ci="${k.id}"${c.enabled[k.id] ? " checked" : ""} aria-label="${k.label} on">
+        </div>`).join("")}
+        <div class="setting-row">
+          <div class="mob-text"><div class="mob-name">Check-in alerts</div>
+            <div class="mob-cue">${notif === "granted" ? "On. You'll get a nudge when a check-in is due (when the phone allows it)." : notif === "denied" ? "Blocked in phone settings." : notif === "unsupported" ? "On iPhone, add ARETE to your Home Screen first, or use the calendar reminders below." : "Optional. The banner shows either way."}</div></div>
+          ${notif === "default" ? `<button type="button" class="btn-heavy small" id="ci-alerts">Turn on alerts</button>` : ""}
+        </div>
+        <div class="setting-row ci-cal"><button type="button" class="btn-heavy" id="ci-ics">Add reminders to my calendar</button></div>`;
+  }
+  function wireCheckinSettings(el) {
+    const c = ciCfg();
+    $$(".ci-time", el).forEach((i) => i.addEventListener("change", () => { if (i.value) { c.times[i.dataset.ci] = i.value; saveDisc(); ciSchedule(); renderDiscipline(); renderCheckinBanner(); } }));
+    $$(".ci-en", el).forEach((i) => i.addEventListener("change", () => { c.enabled[i.dataset.ci] = i.checked; saveDisc(); ciSchedule(); vibrate(15); renderDiscipline(); renderCheckinBanner(); }));
+    const al = $("#ci-alerts", el);
+    if (al) al.addEventListener("click", () => Notification.requestPermission().then(() => { ciSchedule(); renderSettings(); }).catch(() => {}));
+    $("#ci-ics", el).addEventListener("click", downloadIcs);
+  }
+
   function renderSettings() {
     const el = $("#settings-card");
     if (!el) return;
@@ -1572,7 +1850,7 @@
       <details class="lift-card mob-card">
         <summary class="lift-header mob-summary">
           <div class="lift-name">Settings</div>
-          <div class="lift-target">Timer and alerts</div>
+          <div class="lift-target">Check-ins, timer and alerts</div>
         </summary>
         <label class="setting-row">
           <div class="mob-text">
@@ -1588,7 +1866,9 @@
           </div>
           ${notif === "default" ? `<button type="button" class="btn-heavy small" id="set-notif">Enable</button>` : ""}
         </div>
+        ${checkinSettingsHtml()}
       </details>`;
+    wireCheckinSettings(el);
     $("#set-bg").addEventListener("change", (e) => {
       settings.bgTimer = e.target.checked;
       saveSettings();
@@ -1597,12 +1877,13 @@
     });
     const nb = $("#set-notif");
     if (nb) nb.addEventListener("click", () => {
-      Notification.requestPermission().then(renderSettings).catch(() => {});
+      Notification.requestPermission().then(() => { ciSchedule(); renderSettings(); }).catch(() => {});
     });
   }
 
   function showScreen(name) {
     state.screen = name;
+    if (name !== "home") { const cb = document.getElementById("checkin-banner"); if (cb) { cb.hidden = true; cb.innerHTML = ""; } }
     $$(".screen").forEach((s) => s.classList.toggle("active", s.dataset.screen === name));
     window.scrollTo(0, 0);
   }
@@ -1665,6 +1946,7 @@
     renderDiscipline();
     renderScreens();
     renderSettings();
+    renderCheckinBanner();
   }
 
   function openPhase(week) {
@@ -2024,7 +2306,26 @@
     renderTimer();
     resyncTimer(true);
     checkUrge();
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) checkUrge(); });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) { checkUrge(); renderCheckinBanner(); renderDiscipline(); } ciNotifyIfDue(); });
+    const ciTick = () => { renderCheckinBanner(); ciNotifyIfDue(); };
+    setInterval(ciTick, 30000);
+    ciNotifyIfDue();
+    ciSchedule();
+    const openCiFromHash = () => {
+      if ((location.hash || "") !== "#checkin") return;
+      history.replaceState(null, "", location.pathname + location.search);
+      if (state.screen !== "home") renderHome();
+      const c = ciCfg(), n = nowMin();
+      const on = CHECKINS.filter((k) => c.enabled[k.id]);
+      const due = dueCheckin();
+      const past = on.filter((k) => n >= hm(c.times[k.id])).sort((a, b) => hm(c.times[b.id]) - hm(c.times[a.id]));
+      const pickCi = due || past.find((k) => !ciDone(k.id)) || past[0] || on[0] || CHECKINS[0];
+      const go = () => openCheckin(pickCi.id);
+      if (document.getElementById("cover")) document.getElementById("cover").addEventListener("click", () => setTimeout(go, 700), { once: true });
+      else go();
+    };
+    openCiFromHash();
+    window.addEventListener("hashchange", openCiFromHash);
 
     const params = new URLSearchParams(location.search);
     if (params.get("demo") === "timer" && state.dayId) {

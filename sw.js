@@ -1,12 +1,16 @@
-const CACHE = "arete-v18";
+const CACHE = "arete-v19";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
-  "./manifest.webmanifest",
-  "./icon-192.png",
-  "./icon-512.png",
+  "./manifest.webmanifest?v=19",
+  "./icon-192.png?v=19",
+  "./icon-512.png?v=19",
+  "./icon-maskable-512.png?v=19",
+  "./apple-touch-icon.png?v=19",
+  "./favicon-32.png?v=19",
+  "./favicon.ico?v=19",
   "./fonts/oswald-latin.woff2",
   "./fonts/cormorant-italic-latin.woff2",
   "./fonts/cinzel-latin.woff2",
@@ -66,6 +70,22 @@ self.addEventListener("fetch", (event) => {
         })
         .catch(() => cached);
       return cached || fetched;
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = new URL((event.notification.data && event.notification.data.url) || "./", self.registration.scope).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      for (const c of list) {
+        if (c.url.startsWith(self.registration.scope) && "focus" in c) {
+          if ("navigate" in c) c.navigate(target).catch(() => {});
+          return c.focus();
+        }
+      }
+      return self.clients.openWindow ? self.clients.openWindow(target) : undefined;
     })
   );
 });
