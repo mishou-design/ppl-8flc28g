@@ -1,4 +1,4 @@
-const CACHE = "arete-v16";
+const CACHE = "arete-v17";
 const ASSETS = [
   "./",
   "./index.html",
@@ -15,7 +15,7 @@ const ASSETS = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting())
+    caches.open(CACHE).then((cache) => cache.addAll(ASSETS.map((a) => new Request(a, { cache: "reload" })))).then(() => self.skipWaiting())
   );
 });
 
@@ -31,8 +31,20 @@ self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
   const url = new URL(req.url);
-  if (url.pathname.endsWith("logs.json") || url.pathname.endsWith("app.js") || url.pathname.endsWith("sw.js")) {
-    event.respondWith(fetch(req).catch(() => caches.match(req)));
+  // Code + page: always network-first so updates show immediately; cache is only the offline fallback.
+  const p = url.pathname;
+  if (req.mode === "navigate" || p.endsWith("/") || /\.(html|js|css|json|webmanifest)$/.test(p)) {
+    event.respondWith(
+      fetch(req, { cache: "no-store" })
+        .then((res) => {
+          if (res && res.ok && url.origin === self.location.origin) {
+            const copy = res.clone();
+            caches.open(CACHE).then((cache) => cache.put(req, copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match(req).then((c) => c || caches.match("./index.html")))
+    );
     return;
   }
   event.respondWith(
