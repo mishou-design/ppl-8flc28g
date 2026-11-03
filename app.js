@@ -1343,7 +1343,8 @@
           </div>
           ${st.pending ? "" : `<button type="button" class="disc-slip" id="disc-slip">Log a slip today (not a reset)</button>`}
         </div>
-      </details>`;
+      </details>
+      ${journalHtml()}`;
     const det = el.querySelector("details");
     det.addEventListener("toggle", () => { disc.open = det.open; saveDisc(); });
     $("#disc-start").addEventListener("change", (e) => { if (e.target.value) { disc.start = e.target.value; saveDisc(); renderDiscipline(); } });
@@ -1360,6 +1361,96 @@
       toast("Fifteen minutes. It peaks and passes. \u201CWe suffer more in imagination than in reality.\u201D");
     });
     if (urgeLeft) tickUrge();
+    wireJournal();
+  }
+  const TRIGGERS = ["Waking up", "After work", "Stress", "Boredom", "Gaming", "Grief", "Social", "Tired"];
+  const PROMPTS = [
+    "What would the best version of you do with tonight?",
+    "What did the urge feel like, and what did you do instead?",
+    "What are you proud of today?",
+    "What's one thing that would make tomorrow easier?",
+    "Where did you use your abilities today?",
+    "What are you grateful for right now?",
+    "What is in your control tomorrow, and what isn't?",
+  ];
+  function journalHtml() {
+    const day = todayIso();
+    const e = (disc.log || {})[day] || {};
+    const prompt = PROMPTS[dayNum(day) % PROMPTS.length];
+    const entries = Object.entries(disc.log || {}).sort((a, b) => b[0].localeCompare(a[0])).slice(0, 30);
+    const fmt = (iso) => new Date(iso + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+    return `
+      <details class="lift-card mob-card disc-card"${disc.jopen ? " open" : ""} id="journal-det">
+        <summary class="lift-header mob-summary">
+          <div class="lift-name">Daily log</div>
+          <div class="lift-target">${e.saved ? "Today logged ✓" : "Check in + journal"} · this phone only</div>
+        </summary>
+        <div class="disc-body jr">
+          <div class="jr-label">${fmt(day)}</div>
+          <div class="jr-seg" role="group">
+            <button type="button" class="jr-opt${e.clean === true ? " on" : ""}" data-clean="1">Held strong</button>
+            <button type="button" class="jr-opt${e.clean === false ? " on slip" : ""}" data-clean="0">Slipped</button>
+          </div>
+          <label class="jr-range">Strongest urge <b id="jr-cv">${e.craving ?? 0}</b>
+            <input type="range" min="0" max="10" step="1" id="jr-craving" value="${e.craving ?? 0}"></label>
+          <div class="jr-sub">What set it off</div>
+          <div class="jr-chips">${TRIGGERS.map((t) => `<button type="button" class="jr-chip${(e.triggers || []).includes(t) ? " on" : ""}" data-t="${esc(t)}">${esc(t)}</button>`).join("")}</div>
+          <label class="jr-range">Sleep last night <b id="jr-sv">${e.sleep ?? 5}</b>
+            <input type="range" min="0" max="10" step="1" id="jr-sleep" value="${e.sleep ?? 5}"></label>
+          <div class="jr-seg" role="group">
+            <button type="button" class="jr-opt${e.trained ? " on" : ""}" id="jr-trained">Trained today</button>
+          </div>
+          <div class="jr-prompt">${esc(prompt)}</div>
+          <textarea id="jr-text" rows="5" placeholder="Write it out…">${esc(e.text || "")}</textarea>
+          <button type="button" class="btn-heavy" id="jr-save">${e.saved ? "Update today's log" : "Save today's log"}</button>
+          ${entries.length ? `<div class="jr-hist">
+            <div class="jr-sub">History</div>
+            ${entries.map(([d, x]) => `<details class="jr-entry"><summary><span>${fmt(d)}</span><span class="${x.clean === false ? "bad" : "good"}">${x.clean === false ? "Slip" : x.clean === true ? "Held" : "—"}</span><span>Urge ${x.craving ?? "–"} · Sleep ${x.sleep ?? "–"}${x.trained ? " · Trained" : ""}</span></summary>${(x.triggers || []).length ? `<div class="jr-tr">${esc(x.triggers.join(", "))}</div>` : ""}${x.text ? `<p>${esc(x.text).replace(/\n/g, "<br>")}</p>` : ""}</details>`).join("")}
+            <button type="button" class="disc-slip" id="jr-copy">Copy log as text (for counseling)</button>
+          </div>` : ""}
+        </div>
+      </details>`;
+  }
+  function wireJournal() {
+    const det = document.getElementById("journal-det");
+    if (!det) return;
+    det.addEventListener("toggle", () => { disc.jopen = det.open; saveDisc(); });
+    const day = todayIso();
+    const draft = Object.assign({ triggers: [] }, (disc.log || {})[day] || {});
+    det.querySelectorAll("[data-clean]").forEach((b) => b.addEventListener("click", () => {
+      draft.clean = b.dataset.clean === "1";
+      det.querySelectorAll("[data-clean]").forEach((x) => x.classList.remove("on", "slip"));
+      b.classList.add("on"); if (!draft.clean) b.classList.add("slip"); vibrate(10);
+    }));
+    det.querySelectorAll(".jr-chip").forEach((b) => b.addEventListener("click", () => {
+      const t = b.dataset.t; const i = draft.triggers.indexOf(t);
+      if (i >= 0) draft.triggers.splice(i, 1); else draft.triggers.push(t);
+      b.classList.toggle("on", i < 0); vibrate(10);
+    }));
+    $("#jr-craving").addEventListener("input", (e) => { draft.craving = +e.target.value; $("#jr-cv").textContent = e.target.value; });
+    $("#jr-sleep").addEventListener("input", (e) => { draft.sleep = +e.target.value; $("#jr-sv").textContent = e.target.value; });
+    $("#jr-trained").addEventListener("click", (e) => { draft.trained = !draft.trained; e.currentTarget.classList.toggle("on", draft.trained); vibrate(10); });
+    $("#jr-save").addEventListener("click", () => {
+      draft.text = $("#jr-text").value.trim();
+      if (draft.craving == null) draft.craving = +$("#jr-craving").value;
+      if (draft.sleep == null) draft.sleep = +$("#jr-sleep").value;
+      draft.saved = true;
+      disc.log = disc.log || {};
+      const wasSlip = disc.log[day] && disc.log[day].clean === false;
+      disc.log[day] = draft;
+      disc.slips = disc.slips || [];
+      if (draft.clean === false && !disc.slips.includes(day)) disc.slips.push(day);
+      if (draft.clean === true && wasSlip) disc.slips = disc.slips.filter((d) => d !== day);
+      saveDisc(); vibrate(20);
+      toast(draft.clean === false ? "Logged. Not a reset. Back at it tomorrow." : "Logged. \u201CWaste no more time arguing what a good man should be. Be one.\u201D");
+      renderDiscipline();
+    });
+    const cp = $("#jr-copy");
+    if (cp) cp.addEventListener("click", () => {
+      const txt = Object.entries(disc.log || {}).sort().map(([d, x]) =>
+        `${d} | ${x.clean === false ? "Slip" : x.clean === true ? "Held" : "-"} | urge ${x.craving ?? "-"} | sleep ${x.sleep ?? "-"} | trained ${x.trained ? "yes" : "no"}${(x.triggers || []).length ? " | triggers: " + x.triggers.join(", ") : ""}${x.text ? "\n  " + x.text.replace(/\n/g, "\n  ") : ""}`).join("\n");
+      (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast("Copied. Paste it wherever you like."), () => toast("Couldn't copy on this phone."));
+    });
   }
   function tickUrge() {
     clearTimeout(urgeTimer);

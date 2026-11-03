@@ -891,3 +891,35 @@ body::before {
 .disc-settings label { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 4px; text-align: left; font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted); }
 .disc-settings input { background: var(--bg-set); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 9px 8px; font: inherit; font-size: 0.95rem; letter-spacing: 0; text-transform: none; color-scheme: dark; min-width: 0; width: 100%; box-sizing: border-box; }
 .disc-slip { margin-top: 14px; background: none; border: none; color: var(--text-muted); font-size: 0.78rem; text-decoration: underline; text-underline-offset: 3px; }
+
+/* Daily log */
+.jr { text-align: left; }
+.jr-label { font-family: "Cinzel", Georgia, serif; font-size: 1rem; color: #f2ede4; margin: 6px 0 12px; letter-spacing: 0.06em; }
+.jr-seg { display: flex; gap: 8px; margin: 0 0 14px; }
+.jr-opt { flex: 1; min-height: 44px; border-radius: 6px; border: 1px solid var(--border-hi); background: var(--bg-set); color: var(--text-muted); font-family: var(--display); letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.85rem; transition: all 0.2s var(--ease); }
+.jr-opt.on { color: #fff; border-color: var(--accent); background: var(--accent-dim); box-shadow: 0 0 12px rgba(227, 38, 58, 0.3); }
+.jr-opt.on.slip { border-color: #7a5a2a; background: #2a1d0b; box-shadow: none; color: var(--warning); }
+.jr-range { display: block; font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 14px; }
+.jr-range b { float: right; font-family: var(--display); font-size: 1.1rem; color: #f2ede4; letter-spacing: 0; }
+.jr-range input { width: 100%; margin-top: 8px; accent-color: var(--accent); }
+.jr-sub { font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 8px; }
+.jr-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.jr-chip { padding: 7px 11px; border-radius: 999px; border: 1px solid var(--border-hi); background: transparent; color: var(--text-muted); font-size: 0.8rem; }
+.jr-chip.on { color: #fff; border-color: var(--accent); background: var(--accent-dim); }
+.jr-prompt { font-family: "Cormorant", Georgia, serif; font-style: italic; font-size: 1.2rem; line-height: 1.3; color: #e9e4dc; margin: 4px 0 8px; }
+.jr textarea { width: 100%; box-sizing: border-box; background: var(--bg-set); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 10px; font: inherit; font-size: 1rem; line-height: 1.45; resize: vertical; margin-bottom: 12px; }
+.jr textarea:focus { outline: none; border-color: var(--accent); }
+.jr #jr-save { width: 100%; }
+.jr-hist { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border); }
+.jr-entry { border-bottom: 1px solid #1f2227; padding: 8px 0; }
+.jr-entry summary { list-style: none; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font-size: 0.85rem; cursor: pointer; }
+.jr-entry summary::-webkit-details-marker { display: none; }
+.jr-entry summary span:nth-child(3) { grid-column: 1 / -1; font-size: 0.75rem; color: var(--text-muted); }
+.jr-entry .good { color: var(--accent-hot); } .jr-entry .bad { color: var(--warning); }
+.jr-entry p, .jr-tr { margin: 6px 0 0; font-size: 0.88rem; color: #d6d8dc; }
+.jr-tr { color: var(--text-muted); font-size: 0.78rem; }
+.jr-range input[type=range] { -webkit-appearance: none; appearance: none; height: 28px; background: transparent; padding: 0; border: none; }
+.jr-range input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--accent-dim), var(--border-hi)); }
+.jr-range input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; background: var(--border-hi); }
+.jr-range input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; margin-top: -9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--glow); border: 2px solid #f2ede4; }
+.jr-range input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); border: 2px solid #f2ede4; }
