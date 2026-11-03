@@ -797,6 +797,27 @@
     el.textContent = "\u201C" + q + "\u201D";
     document.getElementById("stoic-author").textContent = "\u2014 " + a;
   }
+  function showCover() {
+    const c = document.getElementById("cover");
+    if (!c) return;
+    const [q, a] = STOIC[stoicIdx];
+    document.getElementById("cover-quote").textContent = "\u201C" + q + "\u201D";
+    document.getElementById("cover-author").textContent = a;
+    if (sessionStorage.getItem("arete:cover")) { c.remove(); return; }
+    document.body.classList.add("covered");
+    requestAnimationFrame(() => c.classList.add("in"));
+    let gone = false;
+    const enter = () => {
+      if (gone) return; gone = true;
+      sessionStorage.setItem("arete:cover", "1");
+      c.classList.add("out");
+      document.body.classList.remove("covered");
+      document.body.classList.add("entering");
+      setTimeout(() => { c.remove(); document.body.classList.remove("entering"); }, 900);
+    };
+    c.addEventListener("click", enter);
+    c.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") enter(); });
+  }
 
   // Auto-advance: once every day of the current week has at least one set checked off,
   // the app opens on the next week (and the next block after week 3).
@@ -1630,6 +1651,7 @@
   }
 
   function init() {
+    showCover();
     const sq = document.getElementById("stoic-quote");
     if (sq) sq.addEventListener("click", () => {
       stoicIdx = (stoicIdx + 1) % STOIC.length;

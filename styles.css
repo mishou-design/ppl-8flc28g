@@ -1,5 +1,12 @@
 /* ARETE · dark heavy theme (original styling) */
 @font-face {
+  font-family: "Cormorant";
+  font-style: italic;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./fonts/cormorant-italic-latin.woff2") format("woff2");
+}
+@font-face {
   font-family: "Oswald";
   font-style: normal;
   font-weight: 500 700;
@@ -766,8 +773,48 @@ body.sheet-open .sheet { transform: none; }
 }
 .tagline span { color: var(--text-muted); }
 
-/* Stoic quote */
-.stoic { margin: 6px 0 16px; padding: 10px 0 10px 14px; border-left: 3px solid var(--accent); cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.stoic blockquote { margin: 0; font-family: var(--display); font-weight: 600; font-size: 1.15rem; line-height: 1.3; letter-spacing: 0.02em; text-transform: uppercase; }
-.stoic figcaption { margin-top: 6px; color: var(--text-muted); font-size: 0.8rem; letter-spacing: 0.12em; text-transform: uppercase; }
-.stoic.swap blockquote, .stoic.swap figcaption { animation: screenIn 0.38s var(--ease) both; }
+/* Stoic quote (home) */
+.stoic { margin: 8px 0 18px; padding: 4px 0 4px 16px; border-left: 2px solid var(--accent); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.stoic blockquote { margin: 0; font-family: "Cormorant", Georgia, "Times New Roman", serif; font-style: italic; font-weight: 500; font-size: 1.32rem; line-height: 1.35; color: #e9e4dc; }
+.stoic figcaption { margin-top: 8px; color: var(--text-muted); font-size: 0.72rem; letter-spacing: 0.22em; text-transform: uppercase; }
+.stoic.swap blockquote, .stoic.swap figcaption { animation: quoteIn 0.6s var(--ease) both; }
+@keyframes quoteIn { from { opacity: 0; filter: blur(4px); transform: translate3d(0, 6px, 0); } to { opacity: 1; filter: none; transform: none; } }
+
+/* Cover page */
+body.covered { overflow: hidden; }
+.cover {
+  position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center;
+  padding: 32px 28px; text-align: center; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  background: radial-gradient(ellipse at 50% 38%, rgba(227, 38, 58, 0.16), transparent 55%), radial-gradient(ellipse at 50% 120%, #1a0508, transparent 60%), #040405;
+  opacity: 0; transition: opacity 0.7s var(--ease), transform 0.9s var(--ease), filter 0.9s var(--ease);
+}
+.cover.in { opacity: 1; }
+.cover.out { opacity: 0; transform: scale(1.06); filter: blur(6px); pointer-events: none; }
+.cover-inner > * { opacity: 0; transform: translate3d(0, 12px, 0); }
+.cover.in .cover-inner > * { animation: coverRise 0.9s var(--ease) forwards; }
+.cover.in .cover-ring { animation-delay: 0.05s; }
+.cover.in .cover-word { animation-delay: 0.25s; }
+.cover.in .cover-greek { animation-delay: 0.4s; }
+.cover.in .cover-rule { animation: ruleGrow 1s var(--ease) 0.55s forwards; }
+.cover.in .cover-quote { animation-delay: 0.8s; animation-duration: 1.3s; }
+.cover.in .cover-author { animation-delay: 1.2s; }
+.cover.in .cover-tap { animation: coverRise 0.9s var(--ease) 1.8s forwards, tapPulse 2.6s ease-in-out 2.8s infinite; }
+@keyframes coverRise { to { opacity: 1; transform: none; } }
+@keyframes ruleGrow { from { opacity: 1; transform: scaleX(0); } to { opacity: 1; transform: scaleX(1); } }
+@keyframes tapPulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+.cover-ring {
+  width: 74px; height: 74px; margin: 0 auto 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  border: 2px solid var(--accent); box-shadow: 0 0 22px var(--glow), inset 0 0 14px rgba(227, 38, 58, 0.35);
+  font-family: var(--display); font-weight: 700; font-size: 2rem; color: #fff;
+}
+.cover-word { margin: 0; font-family: var(--display); font-weight: 700; font-size: 3.1rem; letter-spacing: 0.38em; padding-left: 0.38em; color: #f4f1ec; text-shadow: 0 0 24px rgba(227, 38, 58, 0.35); }
+.cover-greek { margin: 4px 0 0; font-family: "Cormorant", Georgia, serif; font-style: italic; font-size: 1.3rem; color: var(--accent-hot); }
+.cover-rule { width: 64px; height: 1px; margin: 26px auto; background: linear-gradient(90deg, transparent, var(--accent), transparent); transform-origin: center; }
+.cover-quote { margin: 0 auto; max-width: 22ch; font-family: "Cormorant", Georgia, "Times New Roman", serif; font-style: italic; font-weight: 500; font-size: 1.6rem; line-height: 1.35; color: #ece7df; }
+.cover-author { margin: 16px 0 0; font-size: 0.72rem; letter-spacing: 0.3em; text-transform: uppercase; color: var(--text-muted); }
+.cover-tap { margin: 48px 0 0; font-size: 0.68rem; letter-spacing: 0.34em; text-transform: uppercase; color: var(--text-muted); }
+body.entering .app { animation: appEnter 0.9s var(--ease) both; }
+@keyframes appEnter { from { opacity: 0; transform: scale(0.97); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .cover, .cover-inner > *, body.entering .app { animation: none !important; transition: opacity 0.3s !important; opacity: 1; transform: none; }
+}
