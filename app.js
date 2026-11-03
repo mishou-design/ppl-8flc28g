@@ -1295,6 +1295,84 @@
     });
   }
 
+
+  // ---- Discipline counter (private, phone only) ----
+  const DISC_KEY = STORAGE_PREFIX + "discipline";
+  const dayNum = (iso) => Math.floor(new Date(iso + "T12:00:00").getTime() / 86400000);
+  const todayIso = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+  function loadDisc() {
+    try { const d = JSON.parse(localStorage.getItem(DISC_KEY) || "null"); if (d && d.start) return d; } catch {}
+    return { start: "2026-11-07", slips: [], perDay: 0, urgeEnd: 0 };
+  }
+  let disc = loadDisc();
+  const saveDisc = () => localStorage.setItem(DISC_KEY, JSON.stringify(disc));
+  let urgeTimer = null;
+  function discStats() {
+    const today = dayNum(todayIso()), start = dayNum(disc.start);
+    const slips = (disc.slips || []).map(dayNum).filter((n) => n >= start && n <= today);
+    if (today < start) return { pending: start - today };
+    const last = slips.length ? Math.max(...slips) : start - 1;
+    const streak = today - last;            // today counts once you've held it
+    const total = today - start + 1 - new Set(slips).size;
+    const m = new Date(); const monthStart = dayNum(new Date(m.getFullYear(), m.getMonth(), 1, 12).toISOString().slice(0, 10));
+    const from = Math.max(start, monthStart);
+    const month = today - from + 1 - slips.filter((n) => n >= from).length;
+    return { streak, total, month, saved: Math.max(0, total) * (Number(disc.perDay) || 0) };
+  }
+  function renderDiscipline() {
+    const el = document.getElementById("discipline-card");
+    if (!el) return;
+    const st = discStats();
+    const marks = [7, 14, 30, 60, 90].map((n) => `<span class="disc-mark${!st.pending && st.streak >= n ? " hit" : ""}">${n}</span>`).join("");
+    const urgeLeft = Math.max(0, (disc.urgeEnd || 0) - Date.now());
+    const mm = String(Math.floor(urgeLeft / 60000)).padStart(2, "0"), ss = String(Math.floor((urgeLeft % 60000) / 1000)).padStart(2, "0");
+    el.innerHTML = `
+      <details class="lift-card mob-card disc-card"${disc.open ? " open" : ""}>
+        <summary class="lift-header mob-summary">
+          <div class="lift-name">Discipline</div>
+          <div class="lift-target">${st.pending ? `Begins in ${st.pending} day${st.pending === 1 ? "" : "s"}` : `Day ${st.streak} · held strong`} · private, this phone only</div>
+        </summary>
+        <div class="disc-body">
+          <div class="disc-big">${st.pending ? "—" : st.streak}<small>${st.pending ? "not started" : "days strong"}</small></div>
+          <div class="disc-marks">${marks}</div>
+          ${st.pending ? "" : `<div class="disc-stats"><div><b>${st.month}</b><span>this month</span></div><div><b>${st.total}</b><span>all time</span></div><div><b>$${Math.round(st.saved)}</b><span>kept</span></div></div>`}
+          <button type="button" class="btn-heavy disc-urge" id="disc-urge">${urgeLeft ? `Hold the line · ${mm}:${ss}` : "Urge? Hold 15 minutes"}</button>
+          <div class="disc-settings">
+            <label>Start <input type="date" id="disc-start" value="${esc(disc.start)}"></label>
+            <label>$ / day <input type="number" inputmode="decimal" min="0" step="1" id="disc-per" value="${disc.perDay || ""}" placeholder="0"></label>
+          </div>
+          ${st.pending ? "" : `<button type="button" class="disc-slip" id="disc-slip">Log a slip today (not a reset)</button>`}
+        </div>
+      </details>`;
+    const det = el.querySelector("details");
+    det.addEventListener("toggle", () => { disc.open = det.open; saveDisc(); });
+    $("#disc-start").addEventListener("change", (e) => { if (e.target.value) { disc.start = e.target.value; saveDisc(); renderDiscipline(); } });
+    $("#disc-per").addEventListener("change", (e) => { disc.perDay = Math.max(0, Number(e.target.value) || 0); saveDisc(); renderDiscipline(); });
+    const slip = $("#disc-slip");
+    if (slip) slip.addEventListener("click", () => {
+      if (!confirm("Log a slip for today? Your month and all-time days stay.")) return;
+      disc.slips = (disc.slips || []).concat(todayIso()); saveDisc(); renderDiscipline();
+      toast("Logged. Back at it tomorrow. \u201CNo great thing is created suddenly.\u201D");
+    });
+    $("#disc-urge").addEventListener("click", () => {
+      if ((disc.urgeEnd || 0) > Date.now()) return;
+      disc.urgeEnd = Date.now() + 15 * 60000; saveDisc(); vibrate(20); tickUrge();
+      toast("Fifteen minutes. It peaks and passes. \u201CWe suffer more in imagination than in reality.\u201D");
+    });
+    if (urgeLeft) tickUrge();
+  }
+  function tickUrge() {
+    clearTimeout(urgeTimer);
+    urgeTimer = setTimeout(() => {
+      const b = document.getElementById("disc-urge");
+      if (!b) return;
+      const left = (disc.urgeEnd || 0) - Date.now();
+      if (left <= 0) { disc.urgeEnd = 0; saveDisc(); vibrate([120, 60, 120]); toast("It passed. You held."); renderDiscipline(); return; }
+      b.textContent = `Hold the line · ${String(Math.floor(left / 60000)).padStart(2, "0")}:${String(Math.floor((left % 60000) / 1000)).padStart(2, "0")}`;
+      tickUrge();
+    }, 1000);
+  }
+
   function renderSettings() {
     const el = $("#settings-card");
     if (!el) return;
@@ -1375,6 +1453,7 @@
     $$(".day-card", grid).forEach((btn) => {
       btn.addEventListener("click", () => openDay(btn.dataset.day));
     });
+    renderDiscipline();
     renderScreens();
     renderSettings();
   }
