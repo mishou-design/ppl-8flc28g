@@ -1345,6 +1345,7 @@
     $("#header-title").textContent = "ARETE";
     $("#header-title").classList.add("wordmark");
     $("#header-badge").classList.add("hidden");
+    $("#header-gear").classList.remove("hidden");
 
     const b = blockInfo(state.week);
     const banner = $("#block-banner");
@@ -1352,7 +1353,6 @@
       <button type="button" class="block-nav" id="week-prev" aria-label="Previous week"${state.week <= 1 ? " disabled" : ""}>‹</button>
       <div class="block-text">
         <div class="block-title">${blockLabelHtml(state.week)}</div>
-        <div class="block-sub">Program week ${state.week}${b.cycle > 1 ? ` · cycle ${b.cycle}` : ""} · new lifts every 3 weeks</div>
       </div>
       <button type="button" class="block-nav" id="week-next" aria-label="Next week">›</button>`;
     $("#week-prev").addEventListener("click", () => { setWeek(state.week - 1); renderHome(); });
@@ -1366,7 +1366,6 @@
         <div class="day-icon ${d.type}">${d.short}</div>
         <div class="day-info">
           <div class="name">${d.name}</div>
-          <div class="meta">${d.focus} · ${lifts.length} lifts · rest ${d.defaultRest}s · +${MOBILITY[d.id].minutes}m mob</div>
           <div class="meta lead">${lifts[0].name}</div>
         </div>
         <div class="day-arrow">›</div>
@@ -1517,6 +1516,7 @@
     badge.classList.remove("hidden", "push", "pull", "legs");
     badge.classList.add(day.type);
     badge.textContent = day.focus;
+    $("#header-gear").classList.add("hidden");
 
     const b = blockInfo(state.week);
     const lifts = liftsFor(day, state.week);
@@ -1651,6 +1651,15 @@
   }
 
   function init() {
+    const gear = $("#header-gear"), extras = $("#extras");
+    if (gear && extras) gear.addEventListener("click", () => {
+      const open = extras.hidden;
+      extras.hidden = !open;
+      gear.setAttribute("aria-expanded", String(open));
+      gear.classList.toggle("on", open);
+      if (open) extras.scrollIntoView({ behavior: "smooth", block: "start" });
+      else window.scrollTo({ top: 0, behavior: "smooth" });
+    });
     showCover();
     const sq = document.getElementById("stoic-quote");
     if (sq) sq.addEventListener("click", () => {
@@ -1692,7 +1701,14 @@
     }
 
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js").catch(() => {});
+      const hadController = !!navigator.serviceWorker.controller;
+      let reloaded = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (!hadController || reloaded) return;
+        reloaded = true;
+        location.reload();
+      });
+      navigator.serviceWorker.register("./sw.js").then((r) => r.update()).catch(() => {});
     }
   }
 
