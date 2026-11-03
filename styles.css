@@ -1061,3 +1061,59 @@ body.ci-open { overflow: hidden; }
 .ci-set .mob-text { min-width: 0; }
 .ci-cal .btn-heavy { width: 100%; }
 @media (prefers-reduced-motion: reduce) { .ci-sheet, .ci-back { transition: none !important; } }
+
+/* Mobility hold timers (v20) */
+.mob-row.has-timer { flex-wrap: wrap; }
+.mt-chip {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; padding: 3px 9px; vertical-align: 1px;
+  font: 800 0.68rem/1.2 var(--display); letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--god, var(--accent)); background: rgba(0,0,0,0.35);
+  border: 1px solid color-mix(in srgb, var(--god, #e3263a) 55%, transparent); border-radius: 999px;
+  -webkit-tap-highlight-color: transparent;
+}
+.mt-chip.open { background: color-mix(in srgb, var(--god, #e3263a) 16%, transparent); }
+.mt-chip.live { color: #fff; background: var(--god, var(--accent)); box-shadow: 0 0 10px color-mix(in srgb, var(--god, #e3263a) 60%, transparent); animation: mtPulse 1.2s ease-in-out infinite; }
+@keyframes mtPulse { 50% { opacity: 0.65; } }
+.mt-panel {
+  flex: 1 0 100%; margin: 10px 0 4px; padding: 16px 14px 14px; border-radius: 10px;
+  background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--god, #e3263a) 12%, #0d0e11) 0%, #0b0c0e 70%);
+  border: 1px solid color-mix(in srgb, var(--god, #e3263a) 35%, var(--border)); box-shadow: var(--bevel);
+  display: flex; flex-direction: column; align-items: center; gap: 10px; animation: unfold 0.3s var(--ease) both;
+}
+.mt-panel[hidden] { display: none; }
+.mt-ring-wrap { position: relative; width: 196px; height: 196px; }
+.mt-ring { width: 100%; height: 100%; transform: rotate(-90deg); }
+.mt-track { fill: #08090b; stroke: #22252b; stroke-width: 7; }
+.mt-prog {
+  fill: none; stroke: var(--god, var(--accent)); stroke-width: 7; stroke-linecap: round;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--god, #e3263a) 70%, transparent)); transition: stroke-dashoffset 0.2s linear;
+}
+.mt-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.mt-num { font: 700 3.4rem/1 var(--display); letter-spacing: 0.02em; color: var(--text); font-variant-numeric: tabular-nums; text-shadow: 0 2px 0 #000; }
+.mt-label { margin-top: 6px; font: 700 0.72rem/1.2 var(--display); letter-spacing: 0.22em; text-transform: uppercase; color: var(--god, var(--accent)); }
+.mt-panel.switching .mt-num, .mt-panel.leading .mt-num { color: var(--warning); font-size: 4.2rem; }
+.mt-panel.switching .mt-prog, .mt-panel.leading .mt-prog { stroke: var(--warning); }
+.mt-panel.paused .mt-num { opacity: 0.55; }
+.mt-panel.finished .mt-num { color: var(--god, var(--accent)); text-shadow: 0 0 18px color-mix(in srgb, var(--god, #e3263a) 70%, transparent); }
+.mt-plan { font-size: 0.78rem; color: var(--text-muted); letter-spacing: 0.04em; }
+.mt-steps { display: flex; gap: 6px; }
+.mt-steps i { width: 22px; height: 4px; border-radius: 2px; background: #2a2d33; transition: background 0.3s; }
+.mt-steps i.now { background: color-mix(in srgb, var(--god, #e3263a) 55%, #2a2d33); }
+.mt-steps i.on { background: var(--god, var(--accent)); box-shadow: 0 0 6px var(--god, var(--accent)); }
+.mt-controls { display: flex; align-items: center; gap: 10px; width: 100%; }
+.mt-controls .mt-go { flex: 1; min-height: 52px; }
+.mt-btn {
+  min-height: 52px; padding: 0 16px; border-radius: 8px; background: var(--plate); border: 1px solid var(--border-hi);
+  box-shadow: var(--bevel); color: var(--text-muted); font: 700 0.85rem var(--display); letter-spacing: 0.12em; text-transform: uppercase;
+}
+.mt-lead { display: flex; align-items: center; gap: 6px; font: 700 0.75rem var(--display); letter-spacing: 0.1em; color: var(--text-muted); white-space: nowrap; }
+.mt-lead input { accent-color: var(--god, var(--accent)); width: 18px; height: 18px; }
+@media (prefers-reduced-motion: reduce) { .mt-chip.live { animation: none; } .mt-prog { transition: none; } }
+.mt-controls .mt-go {
+  border-color: var(--god, var(--accent-hot)); color: var(--god, #fff);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--god, #e3263a) 22%, #1a1c21), color-mix(in srgb, var(--god, #e3263a) 8%, #0e0f12));
+  box-shadow: 0 0 16px color-mix(in srgb, var(--god, #e3263a) 35%, transparent), inset 0 1px 0 rgba(255,255,255,0.12), 0 6px 16px rgba(0,0,0,0.5);
+  letter-spacing: 0.16em; text-transform: uppercase;
+}
+.mob-name .mt-chip { min-height: 0; min-width: 0; height: auto; width: auto; line-height: 1.2; }
+.mt-lead input[type="checkbox"] { -webkit-appearance: checkbox; appearance: auto; min-height: 0; padding: 0; margin: 0; flex: 0 0 auto; }

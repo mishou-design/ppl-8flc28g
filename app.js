@@ -1540,7 +1540,7 @@
     showHeld(q, a);
     try {
       if ("Notification" in window && Notification.permission === "granted") {
-        const opts = { body: "\u201C" + q + "\u201D \u2014 " + a, tag: "arete-held", icon: "./icon-192.png?v=19", badge: "./icon-192.png?v=19" };
+        const opts = { body: "\u201C" + q + "\u201D \u2014 " + a, tag: "arete-held", icon: "./icon-192.png?v=20", badge: "./icon-192.png?v=20" };
         if (navigator.serviceWorker && navigator.serviceWorker.ready) {
           navigator.serviceWorker.ready.then((reg) => reg.showNotification("You held the line.", opts)).catch(() => {});
         }
@@ -1753,7 +1753,7 @@
   function swNotify(title, opts) {
     try {
       if (!("Notification" in window) || Notification.permission !== "granted" || !navigator.serviceWorker) return;
-      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, Object.assign({ icon: "./icon-192.png?v=19", badge: "./icon-192.png?v=19" }, opts))).catch(() => {});
+      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, Object.assign({ icon: "./icon-192.png?v=20", badge: "./icon-192.png?v=20" }, opts))).catch(() => {});
     } catch (_) {}
   }
   function ciSchedule() {
@@ -1769,7 +1769,7 @@
           if (!c.enabled[k.id]) return;
           const ts = base.getTime() + dd * 86400000 + hm(c.times[k.id]) * 60000;
           if (ts <= Date.now() + 30000) return;
-          reg.showNotification("ARETE · " + k.label, { body: "Check-in due. Tap to open.", tag: "arete-ci-" + k.id + "-" + dd, icon: "./icon-192.png?v=19", data: { url: "./#checkin" }, showTrigger: new TimestampTrigger(ts) }).catch(() => {});
+          reg.showNotification("ARETE · " + k.label, { body: "Check-in due. Tap to open.", tag: "arete-ci-" + k.id + "-" + dd, icon: "./icon-192.png?v=20", data: { url: "./#checkin" }, showTrigger: new TimestampTrigger(ts) }).catch(() => {});
         });
       }).catch(() => {});
     } catch (_) {}
@@ -2016,13 +2016,16 @@
   }
   function drillRow(d, k) {
     const on = !!mobState[k];
+    const plan = parseHold(d.dose);
+    const chip = plan ? `<button type="button" class="mt-chip${mt && mt.key === k ? " live" : ""}" data-mt-open="${esc(k)}" aria-label="Timer for ${esc(d.name)}">◷ Timer</button>` : "";
     return `
-      <div class="mob-row${on ? " done" : ""}">
+      <div class="mob-row${on ? " done" : ""}${plan ? " has-timer" : ""}" data-mob-row="${esc(k)}">
         <div class="mob-text">
-          <div class="mob-name">${esc(d.name)} <span class="mob-dose">${esc(d.dose)}</span></div>
+          <div class="mob-name">${esc(d.name)} <span class="mob-dose">${esc(d.dose)}</span> ${chip}</div>
           <div class="mob-cue">${esc(d.cue)} ${watchHtml(d.name)}</div>
         </div>
         <button type="button" class="btn-done mob-check${on ? " checked" : ""}" data-mob="${esc(k)}" aria-label="Mark ${esc(d.name)} done">${on ? "✓" : "○"}</button>
+        ${plan ? mtPanelHtml(k, d, plan) : ""}
       </div>`;
   }
   function mobCount(keys) {
@@ -2072,6 +2075,19 @@
     const d = m.between.drill;
     return `<div class="mob-between">↔ Between sets: <strong>${esc(d.name)} ${esc(d.dose)}</strong> · ${esc(d.cue)} ${watchHtml(d.name)}</div>`;
   }
+  function updateMobUi(k, on) {
+    $$(".mob-check").forEach((btn) => {
+      if (btn.dataset.mob !== k) return;
+      btn.classList.toggle("checked", on);
+      btn.textContent = on ? "✓" : "○";
+      btn.closest(".mob-row").classList.toggle("done", on);
+      const card = btn.closest(".mob-card");
+      const all = $$(".mob-check", card);
+      const prog = $(".mob-progress", card);
+      if (prog) prog.textContent = `${all.filter((b) => mobState[b.dataset.mob]).length}/${all.length}`;
+      if (on) burst(btn);
+    });
+  }
   function bindMobility(root) {
     $$(".mob-check", root).forEach((btn) => {
       btn.addEventListener("click", (e) => {
@@ -2079,17 +2095,251 @@
         const k = btn.dataset.mob;
         const on = !mobState[k];
         setMob(k, on);
-        btn.classList.toggle("checked", on);
-        btn.textContent = on ? "✓" : "○";
-        btn.closest(".mob-row").classList.toggle("done", on);
-        const card = btn.closest(".mob-card");
-        const all = $$(".mob-check", card);
-        const prog = $(".mob-progress", card);
-        if (prog) prog.textContent = `${all.filter((b) => mobState[b.dataset.mob]).length}/${all.length}`;
-        if (on) { burst(btn); vibrate(20); }
+        updateMobUi(k, on);
+        if (on) vibrate(20);
       });
     });
+    mtRender();
   }
+
+  // ---- Mobility hold timers: tap-to-start, timestamp-based (survives backgrounding/reload) ----
+  // Doses like "30s/side", "2×20s", "2×15s/side", "60s", "1 min" get a timer; rep doses don't.
+  const MT_KEY = STORAGE_PREFIX + "mobTimer";      // running timer snapshot
+  const MT_PREF_KEY = STORAGE_PREFIX + "mobTimerPrefs"; // { leadIn: true }
+  const MT_SWITCH = 5, MT_LEAD = 3, MT_RING = 2 * Math.PI * 52;
+  function parseHold(dose) {
+    const t = String(dose || "").replace(/\s+/g, " ").trim().toLowerCase();
+    let m = t.match(/^(?:(\d+)\s*[×x]\s*)?(\d+)\s*s(?:ec)?(\/side)?$/);
+    if (m) return { sets: +(m[1] || 1), sec: +m[2], perSide: !!m[3] };
+    m = t.match(/^(?:(\d+)\s*[×x]\s*)?(\d+(?:\.\d+)?)\s*min(?:ute)?s?(\/side)?$/);
+    if (m) return { sets: +(m[1] || 1), sec: Math.round(+m[2] * 60), perSide: !!m[3] };
+    return null;
+  }
+  function mtSegments(plan, leadIn) {
+    const segs = [];
+    if (leadIn) segs.push({ kind: "lead", label: "Get set", sec: MT_LEAD });
+    const sides = plan.perSide ? 2 : 1;
+    for (let s = 1; s <= plan.sets; s++) {
+      for (let side = 1; side <= sides; side++) {
+        if (segs.length && segs[segs.length - 1].kind === "work") {
+          segs.push({ kind: "switch", label: side === 2 ? "Switch sides" : `Reset · set ${s}`, sec: MT_SWITCH });
+        }
+        const parts = [];
+        if (plan.sets > 1) parts.push(`Set ${s}/${plan.sets}`);
+        if (sides > 1) parts.push(`Side ${side}`);
+        segs.push({ kind: "work", label: parts.join(" · ") || "Hold", sec: plan.sec });
+      }
+    }
+    return segs;
+  }
+  function mtPrefs() {
+    try { const p = JSON.parse(localStorage.getItem(MT_PREF_KEY) || "{}"); return { leadIn: p.leadIn !== false }; } catch { return { leadIn: true }; }
+  }
+  function mtSavePrefs(p) { try { localStorage.setItem(MT_PREF_KEY, JSON.stringify(p)); } catch (_) {} }
+  let mt = null; // { key, dose, segs, startAt, pausedAt, pausedMs, lastIdx, done }
+  let mtInt = null, mtWake = null;
+  try {
+    const saved = JSON.parse(localStorage.getItem(MT_KEY) || "null");
+    if (saved && saved.key && Array.isArray(saved.segs)) mt = saved;
+  } catch (_) {}
+  function mtPersist() {
+    try { if (mt && !mt.done) localStorage.setItem(MT_KEY, JSON.stringify(mt)); else localStorage.removeItem(MT_KEY); } catch (_) {}
+  }
+  function mtTotal(segs) { return segs.reduce((a, g) => a + g.sec, 0) * 1000; }
+  function mtElapsed() {
+    if (!mt || !mt.startAt) return 0;
+    const now = mt.pausedAt || Date.now();
+    return Math.max(0, now - mt.startAt - (mt.pausedMs || 0));
+  }
+  function mtStatus() {
+    // Which segment are we in, and how much of it is left?
+    let el = mtElapsed();
+    for (let i = 0; i < mt.segs.length; i++) {
+      const ms = mt.segs[i].sec * 1000;
+      if (el < ms) return { idx: i, left: ms - el, seg: mt.segs[i], segMs: ms };
+      el -= ms;
+    }
+    return { idx: mt.segs.length, left: 0, seg: null, segMs: 1 };
+  }
+  function mtTone(kind) {
+    try {
+      ensureAudio();
+      const ctx = audioCtx;
+      if (!ctx) return;
+      const t = ctx.currentTime + 0.02;
+      if (kind === "tick") tone(ctx, 660, t, 0.09, 0.35);
+      else if (kind === "go") tone(ctx, 1175, t, 0.22, 0.5);
+      else if (kind === "switch") { tone(ctx, 880, t, 0.14, 0.5); tone(ctx, 880, t + 0.2, 0.14, 0.5); }
+      else { tone(ctx, 880, t, 0.18, 0.55); tone(ctx, 1175, t + 0.22, 0.18, 0.55); tone(ctx, 1568, t + 0.44, 0.3, 0.6); }
+    } catch (_) {}
+  }
+  async function mtWakeOn() {
+    try { if ("wakeLock" in navigator && !mtWake && !document.hidden) { mtWake = await navigator.wakeLock.request("screen"); mtWake.addEventListener("release", () => { mtWake = null; }); } } catch (_) { mtWake = null; }
+  }
+  function mtWakeOff() { try { if (mtWake) mtWake.release(); } catch (_) {} mtWake = null; }
+  function mtStart(k) {
+    const row = document.querySelector(`[data-mob-row="${CSS.escape(k)}"]`);
+    const dose = row ? $(".mob-dose", row).textContent : "";
+    const plan = parseHold(dose);
+    if (!plan) return;
+    ensureAudio();
+    if (mt && mt.key === k && mt.startAt && !mt.done) {
+      // resume
+      if (mt.pausedAt) { mt.pausedMs += Date.now() - mt.pausedAt; mt.pausedAt = 0; }
+    } else {
+      mt = { key: k, dose, segs: mtSegments(plan, mtPrefs().leadIn), startAt: Date.now(), pausedAt: 0, pausedMs: 0, lastIdx: -1, lastSec: -1, done: false, open: true };
+    }
+    if (!mt.segs.length || mt.segs[0].kind === "work") { if (mtElapsed() < 300) { mtTone("go"); vibrate(40); } }
+    mtPersist(); mtWakeOn(); mtEnsureTick(); mtRender();
+  }
+  function mtPause() {
+    if (!mt || !mt.startAt || mt.pausedAt || mt.done) return;
+    mt.pausedAt = Date.now(); mtPersist(); mtWakeOff(); mtRender();
+  }
+  function mtReset(k) {
+    if (mt && mt.key === k) { mt = { key: k, open: true, segs: [], startAt: 0 }; }
+    mtWakeOff(); mtPersist(); mtRender();
+  }
+  function mtEnsureTick() {
+    if (mtInt) return;
+    mtInt = setInterval(mtTick, 200);
+  }
+  function mtTick() {
+    if (!mt || !mt.startAt || mt.done) { clearInterval(mtInt); mtInt = null; return; }
+    const st = mtStatus();
+    const away = document.hidden;
+    if (st.idx !== mt.lastIdx) {
+      const prev = mt.lastIdx;
+      mt.lastIdx = st.idx;
+      if (prev !== -1 || st.idx > 0) {
+        if (st.idx >= mt.segs.length) return mtFinish();
+        const seg = st.seg;
+        if (seg.kind === "switch") { mtTone("switch"); vibrate([90, 60, 90]); }
+        else if (seg.kind === "work") { mtTone("go"); vibrate(60); }
+      }
+      mtPersist();
+    }
+    // 3-2-1 ticks at the end of lead-in / switch segments
+    const secLeft = Math.ceil(st.left / 1000);
+    if (!away && st.seg && st.seg.kind !== "work" && secLeft !== mt.lastSec && secLeft <= 3 && secLeft >= 1 && !mt.pausedAt) mtTone("tick");
+    mt.lastSec = secLeft;
+    mtRender();
+  }
+  function mtFinish() {
+    const k = mt.key;
+    mt.done = true; mt.finishedAt = Date.now();
+    mtTone("done"); vibrate([120, 60, 120, 60, 200]);
+    mtWakeOff(); mtPersist();
+    if (!mobState[k]) { setMob(k, true); updateMobUi(k, true); }
+    clearInterval(mtInt); mtInt = null;
+    mtRender();
+  }
+  function mtPanelHtml(k, d, plan) {
+    const segs = mtSegments(plan, false).filter((g) => g.kind === "work");
+    const plain = `${plan.sets > 1 ? plan.sets + " sets · " : ""}${formatTime(plan.sec)}${plan.perSide ? " each side · 5s switch" : ""}`;
+    const lead = mtPrefs().leadIn;
+    return `
+      <div class="mt-panel" data-mt="${esc(k)}" hidden>
+        <div class="mt-ring-wrap">
+          <svg class="mt-ring" viewBox="0 0 120 120" aria-hidden="true">
+            <circle class="mt-track" cx="60" cy="60" r="52"></circle>
+            <circle class="mt-prog" cx="60" cy="60" r="52" style="stroke-dasharray:${MT_RING};stroke-dashoffset:0"></circle>
+          </svg>
+          <div class="mt-center">
+            <div class="mt-num">${formatTime(plan.sec)}</div>
+            <div class="mt-label">${esc(segs[0].label)}</div>
+          </div>
+        </div>
+        <div class="mt-plan">${esc(plain)}</div>
+        <div class="mt-steps">${mtSegments(plan, false).filter((g) => g.kind === "work").map(() => `<i></i>`).join("")}</div>
+        <div class="mt-controls">
+          <button type="button" class="btn-heavy mt-go" data-mt-go="${esc(k)}">Start</button>
+          <button type="button" class="mt-btn" data-mt-reset="${esc(k)}">Reset</button>
+          <label class="mt-lead"><input type="checkbox" data-mt-lead${lead ? " checked" : ""}> 3-2-1</label>
+        </div>
+      </div>`;
+  }
+  function mtRender() {
+    $$(".mt-panel").forEach((panel) => {
+      const k = panel.dataset.mt;
+      const row = panel.closest(".mob-row");
+      const chip = row && $(".mt-chip", row);
+      const mine = mt && mt.key === k;
+      panel.hidden = !(mine && mt.open);
+      if (chip) {
+        chip.classList.toggle("live", !!(mine && mt.startAt && !mt.done && !mt.pausedAt));
+        chip.classList.toggle("open", !!(mine && mt.open));
+      }
+      if (!mine) return;
+      const num = $(".mt-num", panel), label = $(".mt-label", panel), go = $(".mt-go", panel), ring = $(".mt-prog", panel);
+      const steps = $$(".mt-steps i", panel);
+      panel.classList.remove("running", "paused", "finished", "switching", "leading");
+      if (!mt.startAt) {
+        const plan = parseHold($(".mob-dose", row).textContent);
+        num.textContent = formatTime(plan.sec);
+        label.textContent = mtSegments(plan, false)[0].label;
+        ring.style.strokeDashoffset = "0";
+        steps.forEach((s) => s.className = "");
+        go.textContent = "Start";
+        return;
+      }
+      if (mt.done) {
+        panel.classList.add("finished");
+        num.textContent = "✓";
+        label.textContent = "Hold complete";
+        ring.style.strokeDashoffset = "0";
+        steps.forEach((s) => s.className = "on");
+        go.textContent = "Again";
+        return;
+      }
+      const st = mtStatus();
+      if (!st.seg) return;
+      const secLeft = Math.ceil(st.left / 1000);
+      num.textContent = st.seg.kind === "work" ? formatTime(secLeft) : String(secLeft);
+      label.textContent = st.seg.label;
+      ring.style.strokeDashoffset = String(MT_RING * (1 - st.left / st.segMs));
+      panel.classList.add(mt.pausedAt ? "paused" : "running");
+      if (st.seg.kind === "switch") panel.classList.add("switching");
+      if (st.seg.kind === "lead") panel.classList.add("leading");
+      const workBefore = mt.segs.slice(0, st.idx).filter((g) => g.kind === "work").length;
+      steps.forEach((s, i) => s.className = i < workBefore ? "on" : (i === workBefore && st.seg.kind === "work" ? "now" : ""));
+      go.textContent = mt.pausedAt ? "Resume" : "Pause";
+    });
+  }
+  document.addEventListener("click", (e) => {
+    const open = e.target.closest("[data-mt-open]");
+    if (open) {
+      e.preventDefault();
+      const k = open.dataset.mtOpen;
+      if (mt && mt.key === k) mt.open = !mt.open;
+      else if (mt && mt.startAt && !mt.done && !mt.pausedAt) { mt.open = true; mtPause(); mt = { key: k, open: true, segs: [], startAt: 0 }; }
+      else mt = { key: k, open: true, segs: [], startAt: 0 };
+      mtPersist(); mtRender();
+      return;
+    }
+    const go = e.target.closest("[data-mt-go]");
+    if (go) {
+      e.preventDefault();
+      const k = go.dataset.mtGo;
+      if (mt && mt.key === k && mt.startAt && !mt.done && !mt.pausedAt) mtPause();
+      else { if (mt && mt.done) mt = null; mtStart(k); }
+      return;
+    }
+    const rs = e.target.closest("[data-mt-reset]");
+    if (rs) { e.preventDefault(); mtReset(rs.dataset.mtReset); }
+  });
+  document.addEventListener("change", (e) => {
+    if (e.target.matches("[data-mt-lead]")) {
+      const p = mtPrefs(); p.leadIn = e.target.checked; mtSavePrefs(p);
+      $$("[data-mt-lead]").forEach((c) => (c.checked = p.leadIn));
+    }
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (!mt || !mt.startAt || mt.done) return;
+    if (!document.hidden) { mtTick(); if (!mt.pausedAt && !mt.done) { mtWakeOn(); mtEnsureTick(); } }
+  });
+  if (mt && mt.startAt && !mt.done) mtEnsureTick();
+
   function renderScreens() {
     const el = $("#screens-card");
     if (!el) return;
