@@ -753,6 +753,51 @@
     );
   }
 
+
+  const STOIC = [
+    ["You have power over your mind, not outside events. Realize this, and you will find strength.", "Marcus Aurelius"],
+    ["The impediment to action advances action. What stands in the way becomes the way.", "Marcus Aurelius"],
+    ["Waste no more time arguing about what a good man should be. Be one.", "Marcus Aurelius"],
+    ["At dawn, when you have trouble getting out of bed, tell yourself: I am rising to do the work of a human being.", "Marcus Aurelius"],
+    ["Very little is needed to make a happy life; it is all within yourself.", "Marcus Aurelius"],
+    ["If it is not right, do not do it; if it is not true, do not say it.", "Marcus Aurelius"],
+    ["The best revenge is not to be like your enemy.", "Marcus Aurelius"],
+    ["Confine yourself to the present.", "Marcus Aurelius"],
+    ["We suffer more often in imagination than in reality.", "Seneca"],
+    ["Difficulties strengthen the mind, as labor does the body.", "Seneca"],
+    ["Luck is what happens when preparation meets opportunity.", "Seneca"],
+    ["It is not because things are difficult that we do not dare; it is because we do not dare that they are difficult.", "Seneca"],
+    ["While we wait for life, life passes.", "Seneca"],
+    ["No man is more unhappy than he who never faces adversity. For he is not permitted to prove himself.", "Seneca"],
+    ["Begin at once to live.", "Seneca"],
+    ["No man is free who is not master of himself.", "Epictetus"],
+    ["First say to yourself what you would be; then do what you have to do.", "Epictetus"],
+    ["How long are you going to wait before you demand the best for yourself?", "Epictetus"],
+    ["It's not what happens to you, but how you react to it that matters.", "Epictetus"],
+    ["Don't explain your philosophy. Embody it.", "Epictetus"],
+    ["No great thing is created suddenly.", "Epictetus"],
+    ["Every habit and faculty is preserved and increased by corresponding actions.", "Epictetus"],
+    ["We should train ourselves, not with many lessons, but with constant practice.", "Musonius Rufus"],
+    ["Fate leads the willing and drags along the reluctant.", "Cleanthes"],
+  ];
+  const STOIC_SHORT = [
+    "Rest done. What stands in the way becomes the way.",
+    "Rest done. Be the one who does the work.",
+    "Rest done. Difficulty is what strengthens.",
+    "Rest done. Confine yourself to this set.",
+    "Rest done. Master yourself. Back to the bar.",
+    "Rest done. Embody it, don't explain it.",
+  ];
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  let stoicIdx = Math.floor(Date.now() / 86400000) % STOIC.length; // new quote each day
+  function renderStoic() {
+    const el = document.getElementById("stoic-text");
+    if (!el) return;
+    const [q, a] = STOIC[stoicIdx];
+    el.textContent = "\u201C" + q + "\u201D";
+    document.getElementById("stoic-author").textContent = "\u2014 " + a;
+  }
+
   // Auto-advance: once every day of the current week has at least one set checked off,
   // the app opens on the next week (and the next block after week 3).
   function autoAdvance() {
@@ -762,7 +807,7 @@
       saveWeek(state.week);
       const b = blockInfo(state.week);
       const fresh = b.weekInBlock === 1;
-      toast(`Week ${start} complete. Mission accomplished. Now Block ${b.block} • Week ${b.weekInBlock} of ${b.blockLen}` + (fresh ? " · New lifts" : ""));
+      toast(`Week ${start} complete. Mission accomplished. Now Block ${b.block} • Week ${b.weekInBlock} of ${b.blockLen}` + (fresh ? " · New lifts" : "") + " · \u201C" + pick(STOIC)[0] + "\u201D");
     }
   }
 
@@ -1013,7 +1058,7 @@
     persistTimer();
     if (away) {
       vibrate([200, 80, 200]);
-      toast("Rest done. Back to the bar.");
+      toast(pick(STOIC_SHORT));
       if (document.hidden) notifyRestOver();
     } else {
       beep();
@@ -1273,6 +1318,7 @@
   }
 
   function renderHome() {
+    renderStoic();
     showScreen("home");
     $("#header-back").classList.add("hidden");
     $("#header-title").textContent = "ARETE";
@@ -1584,6 +1630,12 @@
   }
 
   function init() {
+    const sq = document.getElementById("stoic-quote");
+    if (sq) sq.addEventListener("click", () => {
+      stoicIdx = (stoicIdx + 1) % STOIC.length;
+      sq.classList.remove("swap"); void sq.offsetWidth; sq.classList.add("swap");
+      renderStoic();
+    });
     document.addEventListener("pointerdown", ensureAudio);
     $("#header-back").addEventListener("click", () => {
       if (state.screen === "session") {
