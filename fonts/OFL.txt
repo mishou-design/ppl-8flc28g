@@ -94,3 +94,4 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
 
 Cormorant Garamond (fonts/cormorant-italic-latin.woff2) is also licensed under the SIL Open Font License 1.1.
+Cinzel (fonts/cinzel-latin.woff2) is also licensed under the SIL Open Font License 1.1.

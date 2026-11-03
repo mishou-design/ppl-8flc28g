@@ -1,5 +1,12 @@
 /* ARETE · dark heavy theme (original styling) */
 @font-face {
+  font-family: "Cinzel";
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url("./fonts/cinzel-latin.woff2") format("woff2");
+}
+@font-face {
   font-family: "Cormorant";
   font-style: italic;
   font-weight: 500;
@@ -756,11 +763,11 @@ body.sheet-open .sheet { transform: none; }
 
 /* ARETE wordmark + tagline */
 .header h1.wordmark {
-  font-family: var(--display);
-  font-weight: 700;
-  letter-spacing: 0.32em;
-  padding-left: 0.32em;
-  color: #f2f3f5;
+  font-family: "Cinzel", "Trajan Pro", Georgia, serif;
+  font-weight: 600;
+  letter-spacing: 0.42em;
+  padding-left: 0.42em;
+  color: #f2ede4;
   text-shadow: 0 0 10px rgba(227, 38, 58, 0.45), 0 0 26px rgba(227, 38, 58, 0.18);
 }
 .tagline {
@@ -810,7 +817,7 @@ body.covered { overflow: hidden; }
 .cover-word { margin: 0; font-family: var(--display); font-weight: 700; font-size: 3.1rem; letter-spacing: 0.38em; padding-left: 0.38em; color: #f4f1ec; text-shadow: 0 0 24px rgba(227, 38, 58, 0.35); }
 .cover-greek { margin: 4px 0 0; font-family: "Cormorant", Georgia, serif; font-style: italic; font-size: 1.3rem; color: var(--accent-hot); }
 .cover-rule { width: 64px; height: 1px; margin: 26px auto; background: linear-gradient(90deg, transparent, var(--accent), transparent); transform-origin: center; }
-.cover-quote { margin: 0 auto; max-width: 22ch; font-family: "Cormorant", Georgia, "Times New Roman", serif; font-style: italic; font-weight: 500; font-size: 1.6rem; line-height: 1.35; color: #ece7df; }
+.cover-quote { text-shadow: 0 2px 12px #000, 0 0 2px #000; margin: 0 auto; max-width: 22ch; font-family: "Cormorant", Georgia, "Times New Roman", serif; font-style: italic; font-weight: 500; font-size: 1.6rem; line-height: 1.35; color: #ece7df; }
 .cover-author { margin: 16px 0 0; font-size: 0.72rem; letter-spacing: 0.3em; text-transform: uppercase; color: var(--text-muted); }
 .cover-tap { margin: 48px 0 0; font-size: 0.68rem; letter-spacing: 0.34em; text-transform: uppercase; color: var(--text-muted); }
 body.entering .app { animation: appEnter 0.9s var(--ease) both; }
@@ -818,3 +825,38 @@ body.entering .app { animation: appEnter 0.9s var(--ease) both; }
 @media (prefers-reduced-motion: reduce) {
   .cover, .cover-inner > *, body.entering .app { animation: none !important; transition: opacity 0.3s !important; opacity: 1; transform: none; }
 }
+
+/* Classical wordmark + monogram */
+.cover-ring {
+  position: relative; width: 92px; height: 92px; border: 1px solid rgba(227, 38, 58, 0.85);
+  box-shadow: 0 0 26px rgba(227, 38, 58, 0.28), inset 0 0 18px rgba(227, 38, 58, 0.12);
+  font-family: "Cinzel", "Trajan Pro", Georgia, serif; font-weight: 500; font-size: 2.5rem; color: #f2ede4;
+  text-shadow: 0 0 14px rgba(227, 38, 58, 0.45);
+}
+.cover-ring::before { content: ""; position: absolute; inset: 6px; border-radius: 50%; border: 1px solid rgba(242, 237, 228, 0.18); }
+.cover-ring span { transform: translateY(2px); }
+.cover-word { font-family: "Cinzel", "Trajan Pro", Georgia, serif; font-weight: 600; font-size: 2.6rem; letter-spacing: 0.5em; padding-left: 0.5em; color: #f2ede4; text-shadow: 0 0 22px rgba(227, 38, 58, 0.3); }
+
+/* Thermopylae backdrop */
+.cover::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  background: url("./img/thermopylae.webp") center 70% / cover no-repeat;
+  opacity: 0.9; filter: saturate(1) contrast(1.1) brightness(1.15);
+  animation: drift 24s ease-in-out infinite alternate;
+}
+.cover::after {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(ellipse 75% 40% at 50% 52%, rgba(4, 4, 5, 0.62), rgba(4, 4, 5, 0.18) 70%, transparent),
+    linear-gradient(180deg, rgba(4, 4, 5, 0.75) 0%, rgba(4, 4, 5, 0.05) 40%, rgba(4, 4, 5, 0.1) 80%, rgba(4, 4, 5, 0.45) 100%);
+}
+.cover { isolation: isolate; overflow: hidden; }
+@keyframes drift { from { transform: scale(1.04) translate3d(0, 0, 0); } to { transform: scale(1.12) translate3d(-2%, -1.5%, 0); } }
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: url("./img/thermopylae.webp") center 75% / cover no-repeat;
+  opacity: 0.2; filter: grayscale(0.2);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 55%, #000 100%);
+          mask-image: linear-gradient(180deg, transparent 0%, #000 55%, #000 100%);
+}
+@media (prefers-reduced-motion: reduce) { .cover::before { animation: none; } }

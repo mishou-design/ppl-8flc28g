@@ -1,4 +1,4 @@
-const CACHE = "arete-v10";
+const CACHE = "arete-v13";
 const ASSETS = [
   "./",
   "./index.html",
@@ -9,6 +9,8 @@ const ASSETS = [
   "./icon-512.png",
   "./fonts/oswald-latin.woff2",
   "./fonts/cormorant-italic-latin.woff2",
+  "./fonts/cinzel-latin.woff2",
+  "./img/thermopylae.webp",
 ];
 
 self.addEventListener("install", (event) => {
