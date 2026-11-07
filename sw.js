@@ -1,16 +1,16 @@
-const CACHE = "arete-v20";
+const CACHE = "arete-v21";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
-  "./manifest.webmanifest?v=20",
-  "./icon-192.png?v=20",
-  "./icon-512.png?v=20",
-  "./icon-maskable-512.png?v=20",
-  "./apple-touch-icon.png?v=20",
-  "./favicon-32.png?v=20",
-  "./favicon.ico?v=20",
+  "./manifest.webmanifest?v=21",
+  "./icon-192.png?v=21",
+  "./icon-512.png?v=21",
+  "./icon-maskable-512.png?v=21",
+  "./apple-touch-icon.png?v=21",
+  "./favicon-32.png?v=21",
+  "./favicon.ico?v=21",
   "./fonts/oswald-latin.woff2",
   "./fonts/cormorant-italic-latin.woff2",
   "./fonts/cinzel-latin.woff2",
@@ -22,6 +22,7 @@ const ASSETS = [
   "./img/bg-push.webp",
   "./img/bg-pull.webp",
   "./img/bg-legs.webp",
+  "./img/bg-breath.webp",
 ];
 
 self.addEventListener("install", (event) => {

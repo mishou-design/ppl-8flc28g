@@ -768,6 +768,7 @@
     push: { god: "Atlas", img: "./img/bg-push.webp", color: "#9b5cff" },
     pull: { god: "Poseidon", img: "./img/bg-pull.webp", color: "#2ad4c0" },
     legs: { god: "Hermes", img: "./img/bg-legs.webp", color: "#f2c14e" },
+    breath: { god: "Aeolus", title: "The Winds", sub: "Slow the breath. Command the calm.", img: "./img/bg-breath.webp", color: "#a8e6ff" },
   };
   const phaseGod = (weekInBlock) => GODS["phase" + (((weekInBlock - 1) % 3) + 1)];
   function phaseLabel(week) {
@@ -1540,7 +1541,7 @@
     showHeld(q, a);
     try {
       if ("Notification" in window && Notification.permission === "granted") {
-        const opts = { body: "\u201C" + q + "\u201D \u2014 " + a, tag: "arete-held", icon: "./icon-192.png?v=20", badge: "./icon-192.png?v=20" };
+        const opts = { body: "\u201C" + q + "\u201D \u2014 " + a, tag: "arete-held", icon: "./icon-192.png?v=21", badge: "./icon-192.png?v=21" };
         if (navigator.serviceWorker && navigator.serviceWorker.ready) {
           navigator.serviceWorker.ready.then((reg) => reg.showNotification("You held the line.", opts)).catch(() => {});
         }
@@ -1753,7 +1754,7 @@
   function swNotify(title, opts) {
     try {
       if (!("Notification" in window) || Notification.permission !== "granted" || !navigator.serviceWorker) return;
-      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, Object.assign({ icon: "./icon-192.png?v=20", badge: "./icon-192.png?v=20" }, opts))).catch(() => {});
+      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, Object.assign({ icon: "./icon-192.png?v=21", badge: "./icon-192.png?v=21" }, opts))).catch(() => {});
     } catch (_) {}
   }
   function ciSchedule() {
@@ -1769,7 +1770,7 @@
           if (!c.enabled[k.id]) return;
           const ts = base.getTime() + dd * 86400000 + hm(c.times[k.id]) * 60000;
           if (ts <= Date.now() + 30000) return;
-          reg.showNotification("ARETE · " + k.label, { body: "Check-in due. Tap to open.", tag: "arete-ci-" + k.id + "-" + dd, icon: "./icon-192.png?v=20", data: { url: "./#checkin" }, showTrigger: new TimestampTrigger(ts) }).catch(() => {});
+          reg.showNotification("ARETE · " + k.label, { body: "Check-in due. Tap to open.", tag: "arete-ci-" + k.id + "-" + dd, icon: "./icon-192.png?v=21", data: { url: "./#checkin" }, showTrigger: new TimestampTrigger(ts) }).catch(() => {});
         });
       }).catch(() => {});
     } catch (_) {}
@@ -1909,7 +1910,7 @@
 
     const b = blockInfo(state.week);
     const cur = currentPhaseWeek(b);
-    setBg("hub", [cur ? "phase" + (((cur - b.firstWeek) % 3) + 1) : "phase1"]);
+    setBg("hub", [cur ? "phase" + (((cur - b.firstWeek) % 3) + 1) : "phase1", "breath"]);
     const banner = $("#block-banner");
     banner.innerHTML = `
       <button type="button" class="block-nav" id="week-prev" aria-label="Previous rotation"${b.firstWeek <= 1 ? " disabled" : ""}>‹</button>
@@ -1943,6 +1944,7 @@
     }
     grid.innerHTML = tiles.join("");
     $$(".phase-tile", grid).forEach((btn) => btn.addEventListener("click", () => openPhase(parseInt(btn.dataset.week, 10))));
+    renderBreathTile();
     renderDiscipline();
     renderScreens();
     renderSettings();
@@ -2360,6 +2362,707 @@
       </details>`;
   }
 
+  // ---- Breath (Aeolus): tiered, hold-free breathing + guided 15:00 sessions ----
+  // Own storage under arete:breath*; never touches workout logs, mobility or Discipline.
+  // Timing is deadline-derived (startAt + paused ms), so it stays correct when backgrounded or reloaded.
+  const BR_KEY = STORAGE_PREFIX + "breath";           // { tier, tierSince, log: [{ id, at, tier, tech, rating, counted }] }
+  const BR_RUN_KEY = STORAGE_PREFIX + "breathRun";    // running session snapshot
+  const BR_PREF_KEY = STORAGE_PREFIX + "breathPrefs"; // { tones, haptics, where, ease }
+  const BR_BOLT_KEY = STORAGE_PREFIX + "breathBolt";  // [{ at, sec }]
+  const BR_TOTAL = 900;
+  const BR_MIN = 0.58, BR_MAX = 1, BR_TOP = 1.08;
+  const brP = (i, o) => [{ ph: "in", s: i }, { ph: "out", s: o }];
+  const brPat = (p) => (p ? p.map((x) => x.s).join("/") : "easy");
+  const brPatText = (p) => {
+    if (!p) return "easy natural breathing";
+    if (p.length === 2) return `${p[0].s} in / ${p[1].s} out`;
+    return p.map((x) => `${x.s} ${x.ph === "out" ? "out" : x.ph === "top" ? "top-up" : x.ph === "in" ? "in" : "hold"}`).join(" / ");
+  };
+  const BR_TIERS = [
+    { n: 1, name: "Foundation", tech: "Diaphragmatic nasal breathing", short: "Belly breathing",
+      why: "Slow belly breathing through the nose. Shoulders stay quiet; the belly rises first. Never force the breath.",
+      segs: [{ label: "Settle", sec: 180, pat: brP(3, 3) }, { label: "Main", sec: 540, pat: brP(3, 4) }, { label: "Cooldown", sec: 180, pat: null }],
+      need: { count: 5, days: 7 }, advance: "5 comfortable full sessions across at least 1 week, shoulders relaxed, no air hunger." },
+    { n: 2, name: "Control", tech: "Extended exhale", short: "Long exhale",
+      why: "The exhale runs longer than the inhale. Let it slow down on its own; it should never feel squeezed out.",
+      segs: [{ label: "Settle", sec: 180, pat: brP(3, 4) }, { label: "Main", sec: 540, pat: brP(4, 6) }, { label: "Cooldown", sec: 180, pat: brP(3, 4) }],
+      need: { count: 5, days: 7 }, advance: "5 comfortable sessions across at least 1 week, with no forced exhales or catch-up breaths." },
+    { n: 3, name: "Rhythm", tech: "Coherent breathing", short: "Coherent 5/5",
+      why: "Even 5-second breaths: 6 breaths a minute, a pace linked to a calmer, steadier state.",
+      segs: [{ label: "Settle", sec: 180, pat: brP(3, 4) }, { label: "Main", sec: 540, pat: brP(5, 5) }, { label: "Cooldown", sec: 180, pat: brP(3, 4) }],
+      need: { count: 7, days: 14 }, advance: "7 comfortable sessions across at least 2 weeks, without strain." },
+    { n: 4, name: "Ease", tech: "Resonance breathing", short: "Resonance 5/6",
+      why: "About 5.5 breaths a minute with a slightly longer exhale. The easier 5/5 is always one tap away.",
+      segs: [{ label: "Settle", sec: 180, pat: brP(3, 4) }, { label: "Main", sec: 540, pat: brP(5, 6), alt: brP(5, 5) }, { label: "Cooldown", sec: 180, pat: brP(3, 4) }],
+      need: { count: 7, days: 14 }, advance: "7 comfortable sessions across at least 2 weeks, without air hunger.",
+      extra: "Optional, outside the sauna: notice light, quiet nasal breathing during the day. Never deliberately starve yourself of air." },
+    { n: 5, name: "Mastery", tech: "Coherent + extended exhale", short: "5/5 then 4/6",
+      why: "Half the main block at coherent 5/5, half at a long 4/6 exhale. Mastery is calm control, not extreme methods.",
+      segs: [{ label: "Settle", sec: 180, pat: brP(3, 4) }, { label: "Main · Coherent", sec: 270, pat: brP(5, 5) }, { label: "Main · Long exhale", sec: 270, pat: brP(4, 6) }, { label: "Cooldown", sec: 180, pat: brP(3, 4) }],
+      need: null, advance: "Top tier. Keep it: 3 to 5 sessions a week. Repeat or step down a tier any time." },
+  ];
+  // Free-pick techniques. sauna:false = outside the sauna only (seated or lying down), short rounds then easy breathing.
+  const BR_TECH = [
+    { id: "natural", name: "Easy nasal", sauna: true, pat: null, hint: "Nose in · nose out",
+      desc: "No pacer. Quiet, natural breathing through the nose." },
+    { id: "belly", name: "Diaphragmatic 3/4", sauna: true, pat: brP(3, 4), hint: "Belly rises · shoulders still",
+      desc: "Gentle belly breathing with a slightly longer exhale." },
+    { id: "exhale", name: "Extended exhale 4/6", sauna: true, pat: brP(4, 6), hint: "Nose in · slow nose out",
+      desc: "Long, unforced exhale. Downshift to 3/4 if it feels tight." },
+    { id: "coherent", name: "Coherent 5/5", sauna: true, pat: brP(5, 5), hint: "Nose in · nose out",
+      desc: "Six even breaths a minute." },
+    { id: "resonance", name: "Resonance 5/6", sauna: true, pat: brP(5, 6), hint: "Nose in · nose out",
+      desc: "About 5.5 breaths a minute." },
+    { id: "box", name: "Box 4-4-4-4", sauna: false, rounds: 4, hint: "Gentle holds · nothing forced",
+      pat: [{ ph: "in", s: 4 }, { ph: "hold", s: 4 }, { ph: "out", s: 4 }, { ph: "hold", s: 4 }],
+      desc: "4 gentle rounds, then easy breathing for the rest of the timer." },
+    { id: "478", name: "4-7-8", sauna: false, rounds: 4, hint: "Nose in · mouth out",
+      pat: [{ ph: "in", s: 4 }, { ph: "hold", s: 7 }, { ph: "out", s: 8 }],
+      desc: "4 rounds only, then easy breathing. Shorten the counts if the hold feels hard." },
+    { id: "sigh", name: "Cyclic sighing", sauna: false, minutes: 5, hint: "Two nose inhales · long mouth exhale",
+      pat: [{ ph: "in", s: 2 }, { ph: "top", s: 1 }, { ph: "out", s: 6 }],
+      desc: "5 minutes of slow sighs, then gentle easy breathing. Not 15 minutes of big breaths." },
+  ];
+  const BR_STOIC = [
+    ["Confine yourself to the present.", "Marcus Aurelius"],
+    ["Nowhere can a man find a quieter or more untroubled retreat than in his own soul.", "Marcus Aurelius"],
+    ["Very little is needed to make a happy life; it is all within yourself.", "Marcus Aurelius"],
+    ["Withdraw into yourself, as far as you can.", "Seneca"],
+    ["It is the power of the mind to be unconquerable.", "Seneca"],
+    ["No man is free who is not master of himself.", "Epictetus"],
+    ["No great thing is created suddenly.", "Epictetus"],
+    ["We should train ourselves, not with many lessons, but with constant practice.", "Musonius Rufus"],
+    ["The happiness of your life depends upon the quality of your thoughts.", "Marcus Aurelius"],
+  ];
+  const BR_SAFETY = "Stop pacing and breathe normally if you feel dizzy, tingly, short of air or uncomfortable. Hydrate, and leave the sauna if you feel unwell.";
+
+  function brLoad() {
+    try {
+      const s = JSON.parse(localStorage.getItem(BR_KEY) || "{}");
+      return { tier: s.tier >= 1 && s.tier <= 5 ? s.tier : 1, tierSince: s.tierSince || 0, log: Array.isArray(s.log) ? s.log : [] };
+    } catch { return { tier: 1, tierSince: 0, log: [] }; }
+  }
+  let brState = brLoad();
+  function brSave() { try { localStorage.setItem(BR_KEY, JSON.stringify(brState)); } catch (_) {} }
+  function brPrefs() {
+    try {
+      const p = JSON.parse(localStorage.getItem(BR_PREF_KEY) || "{}");
+      return { tones: !!p.tones, haptics: !!p.haptics, where: p.where === "outside" ? "outside" : "sauna", ease: !!p.ease };
+    } catch { return { tones: false, haptics: false, where: "sauna", ease: false }; }
+  }
+  function brSavePrefs(p) { try { localStorage.setItem(BR_PREF_KEY, JSON.stringify(p)); } catch (_) {} }
+  function brBolt() { try { const b = JSON.parse(localStorage.getItem(BR_BOLT_KEY) || "[]"); return Array.isArray(b) ? b : []; } catch { return []; } }
+  function brSaveBolt(b) { try { localStorage.setItem(BR_BOLT_KEY, JSON.stringify(b.slice(-60))); } catch (_) {} }
+
+  let brRun = null;
+  try { const r = JSON.parse(localStorage.getItem(BR_RUN_KEY) || "null"); if (r && r.id && Array.isArray(r.segs)) brRun = r; } catch (_) {}
+  function brPersistRun() { try { if (brRun) localStorage.setItem(BR_RUN_KEY, JSON.stringify(brRun)); else localStorage.removeItem(BR_RUN_KEY); } catch (_) {} }
+
+  const dayStart = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  function brProgress() {
+    const t = BR_TIERS[brState.tier - 1];
+    const c = brState.log.filter((e) => e.counted && e.tier === brState.tier && e.at >= (brState.tierSince || 0));
+    const count = c.length;
+    const span = count ? Math.round((dayStart(Math.max(...c.map((e) => e.at))) - dayStart(Math.min(...c.map((e) => e.at)))) / 86400000) + 1 : 0;
+    const week = brState.log.filter((e) => e.counted && e.at >= Date.now() - 7 * 86400000).length;
+    const eligible = !!t.need && count >= t.need.count && span >= t.need.days;
+    return { t, count, span, week, eligible };
+  }
+  function brSetTier(n) {
+    n = Math.max(1, Math.min(5, n));
+    if (n > brState.tier + 1 || (n === brState.tier + 1 && !brProgress().eligible)) return false; // no skipping ahead
+    if (n === brState.tier) return true;
+    brState.tier = n;
+    brState.tierSince = Date.now();
+    brSave();
+    return true;
+  }
+
+  // ---- session building + clock ----
+  function brTierSegs(tier, ease) {
+    return BR_TIERS[tier - 1].segs.map((g) => ({ label: g.label, sec: g.sec, pat: ease && g.alt ? g.alt : g.pat, alt: ease ? null : g.alt || null }));
+  }
+  function brFreeSegs(tech) {
+    if (tech.rounds) {
+      const cyc = tech.pat.reduce((a, x) => a + x.s, 0) * tech.rounds;
+      return [{ label: "Settle", sec: 120, pat: brP(3, 4) }, { label: `${tech.name} · ${tech.rounds} rounds`, sec: cyc, pat: tech.pat }, { label: "Easy breathing", sec: BR_TOTAL - 120 - cyc, pat: null }];
+    }
+    if (tech.minutes) return [{ label: "Settle", sec: 60, pat: brP(3, 4) }, { label: tech.name, sec: tech.minutes * 60, pat: tech.pat }, { label: "Easy breathing", sec: BR_TOTAL - 60 - tech.minutes * 60, pat: null }];
+    if (!tech.pat) return [{ label: "Easy nasal", sec: BR_TOTAL, pat: null }];
+    return [{ label: "Settle", sec: 120, pat: brP(3, 4) }, { label: "Main", sec: 660, pat: tech.pat }, { label: "Cooldown", sec: 120, pat: null }];
+  }
+  function brElapsed(r = brRun) {
+    if (!r || !r.startAt) return 0;
+    const now = r.pausedAt || Date.now();
+    return Math.max(0, Math.min(BR_TOTAL * 1000, now - r.startAt - (r.pausedMs || 0)));
+  }
+  function brStatus(r = brRun, el = brElapsed(r)) {
+    let t = el, start = 0;
+    for (let i = 0; i < r.segs.length; i++) {
+      const seg = r.segs[i], ms = seg.sec * 1000;
+      if (t < ms) {
+        let pat = seg.pat, pt = t;
+        if (seg.alt && r.easeAt != null && r.easeAt - start <= t) { pat = seg.alt; pt = t - Math.max(0, r.easeAt - start); }
+        const ph = brPhase(pat, pt);
+        return { i, seg, segLeft: ms - t, pat, ph, left: BR_TOTAL * 1000 - el };
+      }
+      t -= ms; start += ms;
+    }
+    return null;
+  }
+  const easeIO = (x) => 0.5 - 0.5 * Math.cos(Math.PI * Math.max(0, Math.min(1, x)));
+  function brPhase(pat, t) {
+    if (!pat) {
+      // Natural breathing: slow, gentle drift, no counts.
+      const w = 0.5 - 0.5 * Math.cos((2 * Math.PI * t) / 9000);
+      return { ph: "easy", key: "easy", count: 0, len: 0, scale: BR_MIN + (BR_MAX - BR_MIN) * 0.5 * w };
+    }
+    const cyc = pat.reduce((a, x) => a + x.s, 0) * 1000;
+    const n = Math.floor(t / cyc);
+    let pos = t - n * cyc, from = BR_MIN;
+    for (let k = 0; k < pat.length; k++) {
+      const p = pat[k], ms = p.s * 1000;
+      const to = p.ph === "in" ? BR_MAX : p.ph === "top" ? BR_TOP : p.ph === "out" ? BR_MIN : from;
+      if (pos < ms) {
+        const f = pos / ms;
+        return { ph: p.ph, key: n + ":" + k, count: Math.min(p.s, Math.floor(pos / 1000) + 1), len: p.s, f, scale: from + (to - from) * easeIO(f) };
+      }
+      pos -= ms; from = to;
+    }
+    return { ph: "out", key: n + ":end", count: 0, len: 0, scale: BR_MIN };
+  }
+  const BR_CUE = { in: "Inhale", top: "Top up", hold: "Hold", out: "Exhale", easy: "Breathe easy" };
+
+  // ---- feedback: soft sine tones + light haptics (opt-in) ----
+  function brTone(freq, dur, vol) {
+    try {
+      ensureAudio();
+      const ctx = audioCtx;
+      if (!ctx) return;
+      const t = ctx.currentTime + 0.02;
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.type = "sine"; osc.frequency.value = freq;
+      osc.connect(gain); gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(vol, t + Math.min(0.25, dur / 3));
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      osc.start(t); osc.stop(t + dur + 0.05);
+    } catch (_) {}
+  }
+  function brCueFx(ph) {
+    const p = brPrefs();
+    if (p.tones) {
+      if (ph === "in") brTone(392, 0.6, 0.07);
+      else if (ph === "top") brTone(494, 0.3, 0.05);
+      else if (ph === "out") brTone(294, 0.7, 0.06);
+      else if (ph === "hold") brTone(330, 0.25, 0.035);
+    }
+    if (p.haptics) vibrate(ph === "in" ? 30 : ph === "out" ? [15, 70, 15] : 10);
+  }
+  function brChime() {
+    const p = brPrefs();
+    if (p.tones) { brTone(523, 1.2, 0.07); setTimeout(() => brTone(784, 1.6, 0.05), 350); }
+    if (p.haptics) vibrate([40, 80, 40]);
+  }
+
+  // ---- wake lock ----
+  let brWake = null;
+  async function brWakeOn() {
+    try { if ("wakeLock" in navigator && !brWake && !document.hidden) { brWake = await navigator.wakeLock.request("screen"); brWake.addEventListener("release", () => { brWake = null; }); } } catch (_) { brWake = null; }
+  }
+  function brWakeOff() { try { if (brWake) brWake.release(); } catch (_) {} brWake = null; }
+
+  // ---- run control ----
+  let brTileTick = 0, brInt = null, brRaf = 0, brLastWall = 0, brLastKey = "", brConfirmEnd = false, brResult = null;
+  function brNewId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+  function brStartTier(tier) {
+    if (brRun && !brRun.done) return openBreathRun();
+    const t = BR_TIERS[tier - 1];
+    const ease = t.n === 4 && brPrefs().ease;
+    brBegin({ kind: "tier", tier: t.n, tech: t.tech, title: t.tech, kicker: `Tier ${ROMAN[t.n - 1]} · ${t.name}`, sauna: true, segs: brTierSegs(t.n, ease), hint: "Nose in · nose out · nothing forced" });
+  }
+  function brStartFree(id, ack) {
+    if (brRun && !brRun.done) return openBreathRun();
+    const tech = BR_TECH.find((x) => x.id === id);
+    if (!tech) return;
+    const where = brPrefs().where;
+    if (!tech.sauna && (where === "sauna" || !ack)) { toast("Outside-the-sauna method: switch to Outside and confirm you're seated or lying down."); return; }
+    brBegin({ kind: "free", tier: 0, tech: tech.id, title: tech.name, kicker: tech.sauna ? "Free pick · hold-free" : "Free pick · outside the sauna", sauna: tech.sauna, segs: brFreeSegs(tech), hint: tech.hint });
+  }
+  function brBegin(o) {
+    ensureAudio();
+    brRun = Object.assign(o, { id: brNewId(), startAt: Date.now(), pausedAt: 0, pausedMs: 0, easeAt: null, done: false, quote: Math.floor(Math.random() * BR_STOIC.length) });
+    brResult = null; brLastKey = ""; brLastWall = Date.now();
+    brPersistRun(); brWakeOn(); brEnsureTick();
+    openBreathRun();
+    const st0 = brStatus();
+    if (st0 && st0.ph.ph !== "easy") { brLastKey = st0.i + "|" + st0.ph.key + "|" + brPat(st0.pat); brCueFx(st0.ph.ph); }
+  }
+  function brPause() {
+    if (!brRun || brRun.done) return;
+    if (brRun.pausedAt) { brRun.pausedMs += Date.now() - brRun.pausedAt; brRun.pausedAt = 0; brWakeOn(); brLastWall = Date.now(); }
+    else { brRun.pausedAt = Date.now(); brWakeOff(); }
+    brPersistRun(); brPaint();
+  }
+  function brEase() {
+    if (!brRun || brRun.done || brRun.easeAt != null) return;
+    brRun.easeAt = brElapsed(); brPersistRun(); brPaint(); toast("Eased to 5/5. Same session, still counts.");
+  }
+  function brEnd() {
+    if (!brRun) return;
+    if (!brRun.done) {
+      if (!brConfirmEnd) { brConfirmEnd = true; brPaint(); setTimeout(() => { brConfirmEnd = false; if (state.screen === "breathrun") brPaint(); }, 3000); return; }
+      brLogEntry("stopped");
+      toast("Stopped early. Doesn't count, and that's fine. Never push through discomfort.");
+    }
+    brConfirmEnd = false;
+    brRun = null; brPersistRun(); brWakeOff(); brStopTick();
+    openBreath();
+  }
+  function brLogEntry(rating) {
+    if (!brRun) return null;
+    if (brState.log.some((e) => e.id === brRun.id)) return null; // one completion per session id
+    const counted = brRun.kind === "tier" && rating === "ok" && brRun.done && brRun.tier === brState.tier;
+    const e = { id: brRun.id, at: Date.now(), tier: brRun.tier, tech: brRun.tech, rating, counted, ease: brRun.easeAt != null || undefined };
+    brState.log.push(e);
+    if (brState.log.length > 400) brState.log = brState.log.slice(-400);
+    brSave();
+    return e;
+  }
+  function brRate(rating) {
+    if (!brRun || !brRun.done) return;
+    const before = brProgress().eligible;
+    const e = brLogEntry(rating);
+    const p = brProgress();
+    brResult = { rating, counted: !!(e && e.counted), kind: brRun.kind, tier: brRun.tier, quote: brRun.quote, eligibleNow: p.eligible && !before };
+    brRun = null; brPersistRun(); brStopTick();
+    brPaint();
+  }
+  function brComplete(live) {
+    if (!brRun || brRun.done) return;
+    brRun.done = true; brRun.doneAt = Date.now();
+    brPersistRun(); brWakeOff();
+    if (live) brChime();
+    brPaint();
+    if (state.screen === "home") renderBreathTile();
+    else if (state.screen === "breath") { const y = window.scrollY; renderBreath(); window.scrollTo(0, y); }
+  }
+  function brEnsureTick() { if (!brInt) brInt = setInterval(brTick, 200); if (!brRaf) brRaf = requestAnimationFrame(brFrame); }
+  function brStopTick() { clearInterval(brInt); brInt = null; if (brRaf) cancelAnimationFrame(brRaf); brRaf = 0; }
+  function brTick() {
+    if (!brRun || brRun.done) { if (!brRun) brStopTick(); return; }
+    const now = Date.now();
+    // Only cue when ticking live; after a background gap or reload, re-sync silently (no catch-up storm).
+    const live = !document.hidden && now - brLastWall < 1200;
+    brLastWall = now;
+    if (brElapsed() >= BR_TOTAL * 1000) return brComplete(live);
+    if (brRun.pausedAt) return;
+    const st = brStatus();
+    if (!st) return;
+    const key = st.i + "|" + st.ph.key + "|" + (st.pat ? brPat(st.pat) : "");
+    if (key !== brLastKey) { if (brLastKey && live && st.ph.ph !== "easy") brCueFx(st.ph.ph); brLastKey = key; }
+    if (state.screen === "breathrun") brPaintText(st);
+    else if (state.screen === "home" && Math.floor(now / 5000) !== brTileTick) { brTileTick = Math.floor(now / 5000); renderBreathTile(); }
+  }
+  function brFrame() {
+    brRaf = 0;
+    if (!brRun || brRun.done) return;
+    if (state.screen === "breathrun" && !document.hidden) {
+      const st = brStatus();
+      const orb = document.getElementById("br-orb");
+      if (st && orb) orb.style.transform = `scale(${st.ph.scale.toFixed(4)})`;
+    }
+    brRaf = requestAnimationFrame(brFrame);
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (!brRun || brRun.done) return;
+    if (document.hidden) { brPersistRun(); return; }
+    brLastWall = 0; // force a silent resync
+    brTick();
+    if (brRun && !brRun.done) { if (!brRun.pausedAt) brWakeOn(); brEnsureTick(); }
+  });
+  window.addEventListener("pageshow", () => { if (brRun && !brRun.done) { brLastWall = 0; brTick(); } });
+  if (brRun && !brRun.done) { brLastWall = 0; brEnsureTick(); }
+
+  // ---- screens ----
+  function openBreath() {
+    history.replaceState(null, "", "#breath");
+    renderBreath();
+  }
+  function openBreathRun() {
+    history.replaceState(null, "", "#breath/session");
+    renderBreathRun();
+  }
+  function renderBreathTile() {
+    const el = document.getElementById("breath-tile");
+    if (!el) return;
+    const p = brProgress();
+    let sub;
+    if (brRun && !brRun.done) sub = `Session live · ${formatTime(Math.ceil((BR_TOTAL * 1000 - brElapsed()) / 1000))} left${brRun.pausedAt ? " · paused" : ""}`;
+    else if (brRun && brRun.done) sub = "Session complete · rate it";
+    else sub = `Tier ${ROMAN[p.t.n - 1]} · ${p.t.name} · ` + (p.t.need ? `${Math.min(p.count, p.t.need.count)}/${p.t.need.count} sessions` : `${p.week} this week`);
+    const live = brRun ? " live" : "";
+    el.innerHTML = `
+      <button class="phase-tile breath-tile${live}" id="open-breath" type="button" style="--god:${GODS.breath.color}">
+        <span class="phase-art" style="background-image:url('${GODS.breath.img}')" aria-hidden="true"></span>
+        <span class="phase-num breath-num" aria-hidden="true">≋</span>
+        <span class="phase-info">
+          <span class="phase-name">Breath <em>${GODS.breath.title}</em></span>
+          <span class="phase-god">${GODS.breath.god}</span>
+          <span class="phase-sub">${esc(sub)}</span>
+        </span>
+        <span class="phase-state" aria-hidden="true">›</span>
+      </button>`;
+    $("#open-breath", el).addEventListener("click", () => (brRun ? openBreathRun() : openBreath()));
+  }
+  function brSegLine(segs) {
+    return segs.map((g) => `<span><b>${esc(g.label)}</b> ${formatTime(g.sec)} · ${esc(brPatText(g.pat))}${g.alt ? ` <em>(or ${esc(brPatText(g.alt))})</em>` : ""}</span>`).join("");
+  }
+  function brBoltHtml() {
+    const b = brBolt();
+    const last = b.slice(-8);
+    const max = Math.max(10, ...last.map((x) => x.sec));
+    const avg = (arr) => (arr.length ? Math.round(arr.reduce((a, x) => a + x.sec, 0) / arr.length) : 0);
+    const recent = b.filter((x) => x.at >= Date.now() - 7 * 86400000);
+    return `
+      <details class="lift-card mob-card br-card" id="br-bolt"${brBoltOpen ? " open" : ""}>
+        <summary class="lift-header mob-summary">
+          <div class="lift-name">BOLT log <span class="mob-tag">optional</span></div>
+          <div class="lift-target">A comfortable-pause trend. Not a test, not required to advance.</div>
+        </summary>
+        <div class="br-pad">
+          <ol class="br-steps-list">
+            <li>Outside the sauna, cooled down, seated and at rest. No deep or fast breaths first.</li>
+            <li>Breathe in and out normally. After a normal exhale, pinch your nose and start.</li>
+            <li>Stop at the <b>first</b> clear urge to breathe, not your max. Release and breathe normally.</li>
+            <li>If you gasp afterward, you went too long. Skip it if unsure or unwell.</li>
+          </ol>
+          <div class="br-bolt-run">
+            <div class="br-bolt-num" id="br-bolt-num">${brBoltStart ? "0" : "–"}<small>sec</small></div>
+            <button type="button" class="btn-heavy br-btn" data-br-act="bolt">${brBoltStart ? "Stop · first urge" : "Start pause"}</button>
+          </div>
+          <div class="br-bolt-manual">
+            <input type="number" inputmode="numeric" min="1" max="120" id="br-bolt-in" placeholder="or type seconds" aria-label="BOLT seconds">
+            <button type="button" class="mt-btn" data-br-act="bolt-save">Log</button>
+          </div>
+          ${last.length ? `
+          <div class="br-bolt-stats"><span>Last <b>${last[last.length - 1].sec}s</b></span><span>7-day avg <b>${avg(recent) || "–"}${recent.length ? "s" : ""}</b></span><span>Entries <b>${b.length}</b></span></div>
+          <div class="br-bars" aria-label="Recent BOLT entries">${last.map((x, i) => `<div class="br-bar" title="${new Date(x.at).toLocaleDateString()}"><i style="height:${Math.round((x.sec / max) * 100)}%"></i><span>${x.sec}</span><button type="button" class="br-x" data-br-bolt-del="${b.length - last.length + i}" aria-label="Delete entry">×</button></div>`).join("")}</div>` : `<p class="br-note">No entries yet. Once a week is plenty.</p>`}
+        </div>
+      </details>`;
+  }
+  let brBoltOpen = false, brFreeOpen = false, brBoltStart = 0, brBoltInt = null, brAck = false;
+  function renderBreath() {
+    showScreen("breath");
+    setHeader("Breath", false, true);
+    setBg("breath");
+    const p = brProgress();
+    const t = p.t;
+    const pr = brPrefs();
+    const need = t.need;
+    const pct = need ? Math.min(100, Math.round((Math.min(p.count, need.count) / need.count) * 100)) : Math.min(100, Math.round((Math.min(p.week, 5) / 5) * 100));
+    const live = brRun && !brRun.done;
+    const where = pr.where;
+    const recent = brState.log.slice(-4).reverse();
+    $("#breath-body").innerHTML = `
+      <div class="phase-hero br-hero">
+        <div class="phase-hero-god">${GODS.breath.god}</div>
+        <h2 class="phase-hero-title">${GODS.breath.title}</h2>
+        <p class="phase-hero-sub">${GODS.breath.sub}</p>
+        <div class="phase-hero-meta">Calm · focus · breath control · recovery</div>
+      </div>
+      ${live || (brRun && brRun.done) ? `<button type="button" class="br-live" data-br-act="resume-run"><span class="br-live-dot"></span>${brRun.done ? "Session complete · tap to rate" : "Session in progress · " + formatTime(Math.ceil((BR_TOTAL * 1000 - brElapsed()) / 1000)) + " left"}<span>›</span></button>` : ""}
+      <div class="lift-card br-card br-current">
+        <div class="br-cur-top">
+          <div class="phase-num br-tier-num">${ROMAN[t.n - 1]}</div>
+          <div class="br-cur-text">
+            <div class="br-kick">Current tier</div>
+            <div class="br-cur-name">${esc(t.name)} <em>${esc(t.tech)}</em></div>
+          </div>
+        </div>
+        <p class="br-why">${esc(t.why)}</p>
+        <div class="br-seglist">${brSegLine(brTierSegs(t.n, t.n === 4 && pr.ease))}</div>
+        <div class="br-prog"><i style="width:${pct}%"></i></div>
+        <div class="br-prog-meta">${need
+          ? `<span><b>${Math.min(p.count, need.count)}/${need.count}</b> comfortable sessions</span><span><b>${Math.min(p.span, need.days)}/${need.days}</b> days</span>`
+          : `<span><b>${p.week}</b> this week</span><span>aim for 3 to 5</span>`}</div>
+        <div class="br-adv"><b>Advance when:</b> ${esc(t.advance)}</div>
+        ${t.n === 4 ? `<label class="br-check"><input type="checkbox" data-br-pref="ease"${pr.ease ? " checked" : ""}> Use the easier 5/5 for the main block</label>` : ""}
+        ${p.eligible ? `<button type="button" class="btn-heavy br-btn br-advance" data-br-tier="${t.n + 1}">Advance to Tier ${ROMAN[t.n]} · ${esc(BR_TIERS[t.n].name)}</button>` : ""}
+        <button type="button" class="btn-heavy br-btn br-start" data-br-act="start-tier"${live ? " disabled" : ""}>Start 15:00 session</button>
+        <p class="br-note">Sauna-safe: nasal, slow, hold-free. Only full sessions you rate comfortable count.</p>
+      </div>
+
+      <div class="lift-card br-card br-safety-card">
+        <div class="lift-header"><div class="lift-name">Safety</div></div>
+        <ul class="br-safe">
+          <li><b>In the sauna:</b> every session is gentle and hold-free. No forced depth, no fast breathing, no breath holds.</li>
+          <li>${esc(BR_SAFETY)}</li>
+          <li>15:00 is a ceiling, not a target. Get out early any time. Phones can overheat in the heat.</li>
+          <li>Heart or lung condition, pregnancy, or a history of fainting: check with a clinician first. Chest pain, severe breathlessness or fainting needs medical attention.</li>
+          <li>Holds and power breathing are outside-the-sauna only: seated or lying down, never in water, the sauna, or while driving.</li>
+        </ul>
+      </div>
+
+      <h3 class="br-h">The five tiers</h3>
+      <div class="br-tiers">
+        ${BR_TIERS.map((x) => {
+          const st = x.n === t.n ? "current" : x.n < t.n ? "done" : x.n === t.n + 1 && p.eligible ? "ready" : "locked";
+          return `
+          <div class="br-tier ${st}">
+            <div class="br-tier-head">
+              <span class="phase-num">${ROMAN[x.n - 1]}</span>
+              <span class="br-tier-name">${esc(x.name)} <em>${esc(x.tech)}</em></span>
+              <span class="br-tier-state">${st === "current" ? "Now" : st === "done" ? "✓" : st === "ready" ? "Ready" : "🔒"}</span>
+            </div>
+            <div class="br-seglist small">${brSegLine(x.segs)}</div>
+            <div class="br-adv"><b>${x.need ? "Advance when:" : "Keep it:"}</b> ${esc(x.advance)}</div>
+            ${x.extra ? `<div class="br-note">${esc(x.extra)}</div>` : ""}
+            ${st === "done" ? `<button type="button" class="mt-btn br-mini" data-br-tier="${x.n}">Step down to Tier ${ROMAN[x.n - 1]}</button>` : ""}
+            ${st === "ready" ? `<button type="button" class="mt-btn br-mini on" data-br-tier="${x.n}">Advance to Tier ${ROMAN[x.n - 1]}</button>` : ""}
+          </div>`;
+        }).join("")}
+      </div>
+
+      <details class="lift-card mob-card br-card" id="br-free"${brFreeOpen ? " open" : ""}>
+        <summary class="lift-header mob-summary">
+          <div class="lift-name">Free pick</div>
+          <div class="lift-target">Any technique, 15:00 timer. Practice only; doesn't count toward tiers.</div>
+        </summary>
+        <div class="br-pad">
+          <div class="jr-seg br-where" role="tablist">
+            <button type="button" class="jr-opt${where === "sauna" ? " on" : ""}" data-br-where="sauna">In the sauna</button>
+            <button type="button" class="jr-opt${where === "outside" ? " on" : ""}" data-br-where="outside">Outside the sauna</button>
+          </div>
+          ${where === "outside" ? `<div class="br-warn"><b>Outside the sauna only.</b> Seated or lying down. Never in water, in the sauna, or while driving. Stop at any dizziness.
+            <label class="br-check"><input type="checkbox" data-br-ack${brAck ? " checked" : ""}> I'm seated or lying down, out of the heat and not driving</label></div>` : `<p class="br-note">Hold-free methods only. Anything with holds is hidden here.</p>`}
+          ${BR_TECH.filter((x) => where === "outside" || x.sauna).map((x) => `
+            <div class="mob-row br-tech">
+              <div class="mob-text">
+                <div class="mob-name">${esc(x.name)} <span class="mob-dose">${x.pat ? esc(brPat(x.pat)) : "no pacer"}</span>${x.sauna ? ` <span class="br-tag">hold-free</span>` : ` <span class="br-tag warn">outside only</span>`}</div>
+                <div class="mob-cue">${esc(x.desc)}</div>
+              </div>
+              <button type="button" class="mt-chip br-go-chip" data-br-free="${x.id}"${live || (!x.sauna && !brAck) ? " disabled" : ""}>▶ 15:00</button>
+            </div>`).join("")}
+          <div class="br-edu">
+            <div class="mob-name">Power breathing (Wim Hof-style) <span class="br-tag warn">info only</span></div>
+            <p>Rounds of fast, deep breaths followed by breath holds. It can cause fainting, so there's no timer for it here. If you explore it elsewhere: seated or lying down only, never in water, the sauna, or while driving. None of the tiers require it.</p>
+          </div>
+        </div>
+      </details>
+
+      ${brBoltHtml()}
+
+      <details class="lift-card mob-card br-card">
+        <summary class="lift-header mob-summary"><div class="lift-name">Settings &amp; history</div><div class="lift-target">Soft tones, haptics, recent sessions</div></summary>
+        <div class="br-pad">
+          <label class="br-check"><input type="checkbox" data-br-pref="tones"${pr.tones ? " checked" : ""}> Soft tones on each breath</label>
+          <label class="br-check"><input type="checkbox" data-br-pref="haptics"${pr.haptics ? " checked" : ""}> Haptics on each breath (Android)</label>
+          <p class="br-note">The screen stays awake during a session where the browser supports it.</p>
+          ${recent.length ? `<div class="br-hist">${recent.map((e) => `<div><span>${new Date(e.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span><span>${e.tier ? "Tier " + ROMAN[e.tier - 1] : esc((BR_TECH.find((x) => x.id === e.tech) || {}).name || "Free")}</span><span class="${e.counted ? "ok" : ""}">${e.rating === "ok" ? (e.counted ? "Counted" : "Comfortable") : e.rating === "hard" ? "Too difficult" : "Stopped early"}</span></div>`).join("")}</div>` : ""}
+          <p class="br-note">Coaching milestones, not a medical protocol. Repeat or step down a tier whenever you like.</p>
+        </div>
+      </details>`;
+    if (brBoltStart) brBoltTick();
+  }
+  function brBoltTick() {
+    clearInterval(brBoltInt);
+    brBoltInt = setInterval(() => {
+      const n = document.getElementById("br-bolt-num");
+      if (!brBoltStart || !n) { clearInterval(brBoltInt); return; }
+      n.innerHTML = Math.floor((Date.now() - brBoltStart) / 1000) + "<small>sec</small>";
+    }, 250);
+  }
+  function brBoltAdd(sec) {
+    sec = Math.round(sec);
+    if (!(sec >= 1 && sec <= 120)) { toast("Enter 1 to 120 seconds."); return; }
+    const b = brBolt(); b.push({ at: Date.now(), sec }); brSaveBolt(b);
+    brBoltOpen = true; renderBreath(); toast(`Logged ${sec}s. Trend over time is what matters.`);
+  }
+  function brBindBreath() {
+    const root = document.getElementById("breath-body");
+    if (!root || root.dataset.bound) return;
+    root.dataset.bound = "1";
+    root.addEventListener("click", (e) => {
+      const a = e.target.closest("[data-br-act]");
+      if (a) {
+        const act = a.dataset.brAct;
+        if (act === "start-tier") brStartTier(brState.tier);
+        else if (act === "resume-run") openBreathRun();
+        else if (act === "bolt") {
+          if (!brBoltStart) { brBoltStart = Date.now(); brBoltOpen = true; vibrate(15); renderBreath(); }
+          else { const s = (Date.now() - brBoltStart) / 1000; brBoltStart = 0; clearInterval(brBoltInt); if (s < 1) { renderBreath(); return; } brBoltAdd(s); }
+        } else if (act === "bolt-save") { const v = parseFloat(($("#br-bolt-in") || {}).value); brBoltAdd(v); }
+        return;
+      }
+      const del = e.target.closest("[data-br-bolt-del]");
+      if (del) { const b = brBolt(); b.splice(parseInt(del.dataset.brBoltDel, 10), 1); brSaveBolt(b); brBoltOpen = true; renderBreath(); return; }
+      const tier = e.target.closest("[data-br-tier]");
+      if (tier) {
+        const n = parseInt(tier.dataset.brTier, 10);
+        const up = n > brState.tier;
+        if (brSetTier(n)) { vibrate(25); renderBreath(); toast(up ? `Tier ${ROMAN[n - 1]} unlocked. ${BR_TIERS[n - 1].name}.` : `Back to Tier ${ROMAN[n - 1]}. Repetition builds the base.`); }
+        return;
+      }
+      const fr = e.target.closest("[data-br-free]");
+      if (fr) { brStartFree(fr.dataset.brFree, brAck); return; }
+      const wh = e.target.closest("[data-br-where]");
+      if (wh) { const p = brPrefs(); p.where = wh.dataset.brWhere; brSavePrefs(p); brAck = false; brFreeOpen = true; renderBreath(); }
+    });
+    root.addEventListener("change", (e) => {
+      const pf = e.target.closest("[data-br-pref]");
+      if (pf) { const p = brPrefs(); p[pf.dataset.brPref] = pf.checked; brSavePrefs(p); if (pf.dataset.brPref === "ease") renderBreath(); return; }
+      if (e.target.matches("[data-br-ack]")) { brAck = e.target.checked; brFreeOpen = true; renderBreath(); }
+    });
+    root.addEventListener("toggle", (e) => {
+      if (e.target.id === "br-free") brFreeOpen = e.target.open;
+      if (e.target.id === "br-bolt") brBoltOpen = e.target.open;
+    }, true);
+  }
+
+  function renderBreathRun() {
+    if (!brRun && !brResult) return openBreath();
+    showScreen("breathrun");
+    setHeader("Breath", false, true);
+    setBg("breath");
+    const root = document.getElementById("breath-run");
+    if (!root.dataset.bound) {
+      root.dataset.bound = "1";
+      root.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-br-run]");
+        if (b) {
+          const k = b.dataset.brRun;
+          if (k === "pause") brPause();
+          else if (k === "end") brEnd();
+          else if (k === "ease") brEase();
+          else if (k === "back") { brResult = null; openBreath(); }
+          return;
+        }
+        const r = e.target.closest("[data-br-rate]");
+        if (r) brRate(r.dataset.brRate);
+      });
+      root.addEventListener("change", (e) => {
+        const pf = e.target.closest("[data-br-pref]");
+        if (pf) { const p = brPrefs(); p[pf.dataset.brPref] = pf.checked; brSavePrefs(p); if (pf.checked) ensureAudio(); }
+      });
+    }
+    root.dataset.view = "";
+    brPaint();
+    if (brRun && !brRun.done) { brTick(); brEnsureTick(); if (!brRun.pausedAt) brWakeOn(); }
+  }
+  function brPaint() {
+    const root = document.getElementById("breath-run");
+    if (!root || state.screen !== "breathrun") return;
+    if (brResult) return brPaintResult(root);
+    if (!brRun) return;
+    if (brRun.done) return brPaintDone(root);
+    if (root.dataset.view !== "run:" + brRun.id) {
+      root.dataset.view = "run:" + brRun.id;
+      const pr = brPrefs();
+      root.innerHTML = `
+        <div class="br-run">
+          <div class="br-run-head">
+            <div class="br-kick">${esc(brRun.kicker)}</div>
+            <div class="br-run-title">${esc(brRun.title)}</div>
+            <div class="br-tag ${brRun.sauna ? "" : "warn"}">${brRun.sauna ? "Sauna-safe · hold-free" : "Outside the sauna · seated or lying down"}</div>
+          </div>
+          <div class="br-orb-wrap" aria-hidden="true">
+            <div class="br-ring"></div>
+            <div class="br-orb" id="br-orb"></div>
+            <div class="br-orb-text"><div class="br-cue" id="br-cue">Inhale</div><div class="br-count" id="br-count"></div></div>
+          </div>
+          <div class="br-live-region" id="br-aria" aria-live="polite"></div>
+          <div class="br-hint" id="br-hint">${esc(brRun.hint || "")}</div>
+          <div class="br-clock">
+            <div><b id="br-total">15:00</b><span>Remaining</span></div>
+            <div><b id="br-seg">Settle</b><span id="br-seg-left"></span></div>
+          </div>
+          <div class="mt-steps br-steps" id="br-steps">${brRun.segs.map(() => "<i></i>").join("")}</div>
+          <div class="br-pace" id="br-pace"></div>
+          <div class="mt-controls br-controls">
+            <button type="button" class="mt-btn" data-br-run="end" id="br-end">End</button>
+            <button type="button" class="btn-heavy mt-go" data-br-run="pause" id="br-pause">Pause</button>
+          </div>
+          <button type="button" class="mt-btn br-ease" data-br-run="ease" id="br-ease" hidden>Ease to 5/5</button>
+          <div class="br-toggles">
+            <label class="br-check"><input type="checkbox" data-br-pref="tones"${pr.tones ? " checked" : ""}> Soft tones</label>
+            <label class="br-check"><input type="checkbox" data-br-pref="haptics"${pr.haptics ? " checked" : ""}> Haptics</label>
+          </div>
+          <p class="br-safety">${esc(BR_SAFETY)} 15:00 is a ceiling, not a target.</p>
+        </div>`;
+    }
+    const st = brStatus();
+    if (st) brPaintText(st);
+    const pause = document.getElementById("br-pause");
+    pause.textContent = brRun.pausedAt ? "Resume" : "Pause";
+    document.getElementById("br-end").textContent = brConfirmEnd ? "Tap to end" : "End";
+    document.getElementById("br-end").classList.toggle("confirm", brConfirmEnd);
+    root.querySelector(".br-run").classList.toggle("paused", !!brRun.pausedAt);
+  }
+  let brAriaLast = "";
+  function brPaintText(st) {
+    const cue = document.getElementById("br-cue");
+    if (!cue) return;
+    const ph = st.ph;
+    cue.textContent = brRun.pausedAt ? "Paused" : BR_CUE[ph.ph];
+    document.getElementById("br-count").textContent = ph.len && !brRun.pausedAt ? `${ph.count}` : "";
+    document.getElementById("br-total").textContent = formatTime(Math.ceil(st.left / 1000));
+    document.getElementById("br-seg").textContent = st.seg.label;
+    document.getElementById("br-seg-left").textContent = formatTime(Math.ceil(st.segLeft / 1000)) + " left";
+    document.getElementById("br-pace").textContent = st.pat ? brPatText(st.pat) + (st.pat.length === 2 ? ` · ${(60 / (st.pat[0].s + st.pat[1].s)).toFixed(1).replace(".0", "")} breaths/min` : "") : "No pacer · quiet nasal breathing";
+    $$("#br-steps i").forEach((el, i) => (el.className = i < st.i ? "on" : i === st.i ? "now" : ""));
+    const wrap = document.querySelector(".br-orb-wrap");
+    if (wrap) wrap.dataset.ph = ph.ph;
+    const orb = document.getElementById("br-orb");
+    if (orb) orb.style.transform = `scale(${ph.scale.toFixed(4)})`;
+    const ease = document.getElementById("br-ease");
+    if (ease) ease.hidden = !(st.seg.alt && brRun.easeAt == null);
+    const aria = BR_CUE[ph.ph];
+    if (aria !== brAriaLast) { brAriaLast = aria; const a = document.getElementById("br-aria"); if (a) a.textContent = aria; }
+  }
+  function brPaintDone(root) {
+    if (root.dataset.view === "done:" + brRun.id) return;
+    root.dataset.view = "done:" + brRun.id;
+    const [q, a] = BR_STOIC[brRun.quote % BR_STOIC.length];
+    root.innerHTML = `
+      <div class="br-done">
+        <div class="br-done-ring">≋</div>
+        <div class="br-done-title">15:00 complete</div>
+        <div class="held-rule br-rule"></div>
+        <blockquote class="held-quote">\u201C${esc(q)}\u201D</blockquote>
+        <p class="held-author">${esc(a)}</p>
+        <p class="br-ask">${brRun.kind === "tier" ? "How did it feel? Only comfortable sessions count toward the next tier." : "How did it feel?"}</p>
+        <div class="br-rate">
+          <button type="button" class="btn-heavy br-btn" data-br-rate="ok">Comfortable</button>
+          <button type="button" class="mt-btn" data-br-rate="hard">Too difficult</button>
+        </div>
+        <p class="br-note">Drink some water. Leave the heat if you feel at all unwell.</p>
+      </div>`;
+  }
+  function brPaintResult(root) {
+    root.dataset.view = "result";
+    const r = brResult;
+    const p = brProgress();
+    const [q, a] = BR_STOIC[r.quote % BR_STOIC.length];
+    let msg;
+    if (r.kind !== "tier") msg = r.rating === "ok" ? "Practice logged." : "Logged. Pick an easier pattern next time.";
+    else if (r.rating === "hard") msg = `Logged, not counted. Repeat Tier ${ROMAN[r.tier - 1]} or step down a tier. Easier is how you progress.`;
+    else if (!r.counted) msg = "Logged as practice.";
+    else if (p.eligible) msg = `Criteria met. Tier ${ROMAN[p.t.n]} · ${BR_TIERS[p.t.n].name} is ready when you are.`;
+    else if (p.t.need) msg = `Counted. ${Math.min(p.count, p.t.need.count)}/${p.t.need.count} sessions · ${Math.min(p.span, p.t.need.days)}/${p.t.need.days} days toward Tier ${ROMAN[p.t.n]}.`;
+    else msg = `Counted. ${p.week} this week. Aim for 3 to 5.`;
+    root.innerHTML = `
+      <div class="br-done">
+        <div class="br-done-ring">${r.counted ? "✓" : "≋"}</div>
+        <div class="br-done-title">${r.rating === "ok" ? "Well breathed." : "Noted."}</div>
+        <p class="br-result">${esc(msg)}</p>
+        <div class="held-rule br-rule"></div>
+        <blockquote class="held-quote">\u201C${esc(q)}\u201D</blockquote>
+        <p class="held-author">${esc(a)}</p>
+        <button type="button" class="btn-heavy br-btn" data-br-run="back">Back to Breath</button>
+      </div>`;
+  }
+
   function renderSession() {
     const day = getDay(state.dayId);
     if (!day) return renderHome();
@@ -2530,9 +3233,12 @@
       if (state.screen === "session") {
         history.replaceState(null, "", "#phase/" + state.week);
         renderPhase();
-      } else if (state.screen === "phase") {
+      } else if (state.screen === "phase" || state.screen === "breath") {
         history.replaceState(null, "", location.pathname + location.search);
         renderHome();
+      } else if (state.screen === "breathrun") {
+        brResult = null;
+        openBreath();
       }
     });
     bindTimerControls();
@@ -2546,7 +3252,12 @@
     const hash = (location.hash || "").replace(/^#/, "");
     const m = hash.match(/^session\/([\w-]+)/);
     const mp = hash.match(/^phase\/(\d+)/);
-    if (m && getDay(m[1])) {
+    brBindBreath();
+    if (hash === "breath/session" && brRun) {
+      openBreathRun();
+    } else if (hash.startsWith("breath")) {
+      openBreath();
+    } else if (m && getDay(m[1])) {
       openDay(m[1]);
     } else if (mp) {
       openPhase(parseInt(mp[1], 10));
