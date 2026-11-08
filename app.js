@@ -1541,7 +1541,7 @@
     showHeld(q, a);
     try {
       if ("Notification" in window && Notification.permission === "granted") {
-        const opts = { body: "\u201C" + q + "\u201D \u2014 " + a, tag: "arete-held", icon: "./icon-192.png?v=21", badge: "./icon-192.png?v=21" };
+        const opts = { body: "\u201C" + q + "\u201D \u2014 " + a, tag: "arete-held", icon: "./icon-192.png?v=22", badge: "./icon-192.png?v=22" };
         if (navigator.serviceWorker && navigator.serviceWorker.ready) {
           navigator.serviceWorker.ready.then((reg) => reg.showNotification("You held the line.", opts)).catch(() => {});
         }
@@ -1574,13 +1574,16 @@
   // ---- Daily check-ins (private, this phone only) ----
   const CHECKINS = [
     { id: "morning", label: "Morning anchor", short: "AM", def: "07:00" },
+    { id: "midday", label: "Midday reset", short: "MID", def: "11:10" },
     { id: "after", label: "After work", short: "PM", def: "15:45" },
     { id: "evening", label: "Evening review", short: "EVE", def: "20:30" },
   ];
   const CI_INTENT = ["Train", "Stay busy", "Hold strong", "Rest"];
   const CI_REASONS = ["My people", "Health", "My old self"];
   const CI_PLANS = ["Train now", "Walk", "Shower", "Call someone", "Eat", "Gaming"];
+  const CI_MOVES = ["Gum", "Cold water", "Walk", "Breathe 2 min", "Pushups", "Eat"];
   const CI_LINES = {
+    midday: [["You have power over your mind, not outside events. Realize this, and you will find strength.", "Marcus Aurelius"], ["Wait. Give the urge a little time; it will pass.", "Epictetus"], ["We suffer more in imagination than in reality.", "Seneca"]],
     morning: [["At dawn, tell yourself: I am rising to do the work of a human being.", "Marcus Aurelius"], ["Begin at once to live.", "Seneca"], ["First say to yourself what you would be; then do what you have to do.", "Epictetus"]],
     after: [["Most powerful is he who has himself in his own power.", "Seneca"], ["Persist and resist.", "Epictetus"], ["What stands in the way becomes the way.", "Marcus Aurelius"]],
     evening: [["Every night, review the day. What did I do well? What can I do better?", "Seneca"], ["No great thing is created suddenly.", "Epictetus"], ["Confine yourself to the present.", "Marcus Aurelius"]],
@@ -1629,6 +1632,7 @@
     const ci = (x && x.checkins) || {};
     const parts = [];
     if (ci.morning && ci.morning.done) parts.push(`morning: sleep ${ci.morning.sleep ?? "-"}${ci.morning.intent ? ", intention " + ci.morning.intent : ""}${(ci.morning.reasons || []).length ? ", reason " + ci.morning.reasons.join(", ") : ""}`);
+    if (ci.midday && ci.midday.done) parts.push(`midday: urge ${ci.midday.urge ?? "-"}${(ci.midday.plan || []).length ? ", plan " + ci.midday.plan.join(", ") : ""}`);
     if (ci.after && ci.after.done) parts.push(`after work: urge ${ci.after.urge ?? "-"}${(ci.after.plan || []).length ? ", plan " + ci.after.plan.join(", ") : ""}`);
     if (ci.evening && ci.evening.done) parts.push(`evening: ${ci.evening.clean === false ? "slipped" : "held"}, peak ${ci.evening.peak ?? "-"}, trained ${ci.evening.trained ? "yes" : "no"}${ci.evening.note ? ", note: " + ci.evening.note : ""}`);
     return parts.length ? "\n  check-ins: " + parts.join(" | ") : "";
@@ -1653,13 +1657,13 @@
           <input type="range" min="0" max="10" step="1" data-k="sleep" value="${d.sleep}"></label>
         <div class="jr-sub">Today's intention</div>${chipRow("intent", CI_INTENT, d.intent, false)}
         <div class="jr-sub">My reason today</div>${chipRow("reasons", CI_REASONS, d.reasons, true)}`;
-    } else if (k.id === "after") {
+    } else if (k.id === "after" || k.id === "midday") {
       d.urge = d.urge ?? 0; d.plan = d.plan || [];
       const live = (disc.urgeEnd || 0) > Date.now();
       body = `
         <label class="jr-range">Urge right now <b class="ci-v" data-for="urge">${d.urge}</b>
           <input type="range" min="0" max="10" step="1" data-k="urge" value="${d.urge}"></label>
-        <div class="jr-sub">The plan for the next hour</div>${chipRow("plan", CI_PLANS, d.plan, true)}
+        <div class="jr-sub">${k.id === "midday" ? "Noon is the peak. Your move for the next hour" : "The plan for the next hour"}</div>${chipRow("plan", k.id === "midday" ? CI_MOVES : CI_PLANS, d.plan, true)}
         <button type="button" class="btn-heavy ci-hold" id="ci-hold"${live ? " disabled" : ""}>${live ? "Holding the line…" : "Hold the line · 15 min"}</button>`;
     } else {
       d.clean = d.clean ?? day.clean; d.peak = d.peak ?? day.craving ?? 0; d.trained = d.trained ?? !!day.trained;
@@ -1715,7 +1719,7 @@
       entry.checkins[k.id] = d;
       // Feed the existing daily log so history + export stay in one place.
       if (k.id === "morning") entry.sleep = d.sleep;
-      if (k.id === "after") entry.craving = Math.max(entry.craving || 0, d.urge || 0);
+      if (k.id === "after" || k.id === "midday") entry.craving = Math.max(entry.craving || 0, d.urge || 0);
       if (k.id === "evening") {
         disc.slips = disc.slips || [];
         const wasSlip = entry.clean === false;
@@ -1754,7 +1758,7 @@
   function swNotify(title, opts) {
     try {
       if (!("Notification" in window) || Notification.permission !== "granted" || !navigator.serviceWorker) return;
-      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, Object.assign({ icon: "./icon-192.png?v=21", badge: "./icon-192.png?v=21" }, opts))).catch(() => {});
+      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, Object.assign({ icon: "./icon-192.png?v=22", badge: "./icon-192.png?v=22" }, opts))).catch(() => {});
     } catch (_) {}
   }
   function ciSchedule() {
@@ -1770,13 +1774,13 @@
           if (!c.enabled[k.id]) return;
           const ts = base.getTime() + dd * 86400000 + hm(c.times[k.id]) * 60000;
           if (ts <= Date.now() + 30000) return;
-          reg.showNotification("ARETE · " + k.label, { body: "Check-in due. Tap to open.", tag: "arete-ci-" + k.id + "-" + dd, icon: "./icon-192.png?v=21", data: { url: "./#checkin" }, showTrigger: new TimestampTrigger(ts) }).catch(() => {});
+          reg.showNotification("ARETE · " + k.label, { body: "Check-in due. Tap to open.", tag: "arete-ci-" + k.id + "-" + dd, icon: "./icon-192.png?v=22", data: { url: "./#checkin" }, showTrigger: new TimestampTrigger(ts) }).catch(() => {});
         });
       }).catch(() => {});
     } catch (_) {}
   }
 
-  // Calendar file: three daily repeating reminders.
+  // Calendar file: daily repeating reminders, one per check-in.
   function buildIcs() {
     const c = ciCfg();
     const pad = (n) => String(n).padStart(2, "0");
