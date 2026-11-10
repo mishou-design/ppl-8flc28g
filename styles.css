@@ -1242,8 +1242,18 @@ body.ci-open { overflow: hidden; }
 .br-controls .mt-btn.confirm { color: var(--warning); border-color: var(--warning); }
 .br-ease { width: 100%; min-height: 44px; color: var(--god); border-color: color-mix(in srgb, var(--god) 50%, transparent); }
 .br-ease[hidden] { display: none; }
-.br-toggles { display: flex; gap: 18px; justify-content: center; }
-.br-toggles .br-check { margin-top: 0; font-size: 0.8rem; }
+.br-sound { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 6px 2px 2px; }
+.br-sound-wrap { width: 100%; border: 1px solid var(--border); border-radius: 8px; background: rgba(8, 10, 13, 0.7); padding: 4px 12px 10px; }
+.br-sound-wrap > summary { cursor: pointer; padding: 10px 0; font-size: 0.72rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-muted); list-style: none; text-align: center; min-height: 24px; }
+.br-sound-wrap > summary::-webkit-details-marker { display: none; }
+.br-range { -webkit-appearance: none; appearance: none; width: 100%; margin: 8px 0 2px; height: 28px; padding: 0; background: transparent; border: 0; box-shadow: none; }
+.br-range::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--god), rgba(255,255,255,0.18)); }
+.br-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 24px; height: 24px; margin-top: -10px; border-radius: 50%; background: var(--god); border: 2px solid #0b0e12; box-shadow: 0 0 10px color-mix(in srgb, var(--god) 60%, transparent); }
+.br-range::-moz-range-track { height: 4px; border-radius: 2px; background: rgba(255,255,255,0.25); }
+.br-range::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: var(--god); border: 2px solid #0b0e12; }
+.br-test { margin-top: 12px; width: 100%; min-height: 44px; }
+.br-snd-state { font-size: 0.72rem; letter-spacing: 0.12em; color: var(--text-muted); min-height: 1.1em; }
+.br-check input:disabled + * , .br-check:has(input:disabled) { opacity: 0.55; }
 .br-safety { font-size: 0.74rem; color: var(--text-muted); max-width: 340px; }
 .br-run.paused .br-orb { filter: grayscale(0.6) brightness(0.7); }
 .br-done { text-align: center; padding: 30px 8px 10px; display: flex; flex-direction: column; align-items: center; animation: rise 0.5s var(--ease) both; }

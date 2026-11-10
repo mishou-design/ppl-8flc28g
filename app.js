@@ -1013,8 +1013,21 @@
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
-      if (!audioCtx) audioCtx = new AC();
-      if (audioCtx.state === "suspended") audioCtx.resume();
+      if (!audioCtx) {
+        audioCtx = new AC();
+        audioCtx.onstatechange = () => { try { brSndState(); } catch (_) {} };
+      }
+      if (audioCtx.state !== "running") {
+        // iOS: resume + a one-sample silent buffer inside the tap unlocks output.
+        const pr = audioCtx.resume();
+        if (pr && pr.catch) pr.catch(() => {});
+        try {
+          const src = audioCtx.createBufferSource();
+          src.buffer = audioCtx.createBuffer(1, 1, 22050);
+          src.connect(audioCtx.destination);
+          src.start(0);
+        } catch (_) {}
+      }
     } catch (_) {}
   }
 
@@ -1541,7 +1554,7 @@
     showHeld(q, a);
     try {
       if ("Notification" in window && Notification.permission === "granted") {
-        const opts = { body: "\u201C" + q + "\u201D \u2014 " + a, tag: "arete-held", icon: "./icon-192.png?v=22", badge: "./icon-192.png?v=22" };
+        const opts = { body: "\u201C" + q + "\u201D \u2014 " + a, tag: "arete-held", icon: "./icon-192.png?v=23", badge: "./icon-192.png?v=23" };
         if (navigator.serviceWorker && navigator.serviceWorker.ready) {
           navigator.serviceWorker.ready.then((reg) => reg.showNotification("You held the line.", opts)).catch(() => {});
         }
@@ -1758,7 +1771,7 @@
   function swNotify(title, opts) {
     try {
       if (!("Notification" in window) || Notification.permission !== "granted" || !navigator.serviceWorker) return;
-      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, Object.assign({ icon: "./icon-192.png?v=22", badge: "./icon-192.png?v=22" }, opts))).catch(() => {});
+      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, Object.assign({ icon: "./icon-192.png?v=23", badge: "./icon-192.png?v=23" }, opts))).catch(() => {});
     } catch (_) {}
   }
   function ciSchedule() {
@@ -1774,7 +1787,7 @@
           if (!c.enabled[k.id]) return;
           const ts = base.getTime() + dd * 86400000 + hm(c.times[k.id]) * 60000;
           if (ts <= Date.now() + 30000) return;
-          reg.showNotification("ARETE · " + k.label, { body: "Check-in due. Tap to open.", tag: "arete-ci-" + k.id + "-" + dd, icon: "./icon-192.png?v=22", data: { url: "./#checkin" }, showTrigger: new TimestampTrigger(ts) }).catch(() => {});
+          reg.showNotification("ARETE · " + k.label, { body: "Check-in due. Tap to open.", tag: "arete-ci-" + k.id + "-" + dd, icon: "./icon-192.png?v=23", data: { url: "./#checkin" }, showTrigger: new TimestampTrigger(ts) }).catch(() => {});
         });
       }).catch(() => {});
     } catch (_) {}
@@ -2448,11 +2461,23 @@
   }
   let brState = brLoad();
   function brSave() { try { localStorage.setItem(BR_KEY, JSON.stringify(brState)); } catch (_) {} }
+  const brNum = (v, d) => { v = parseFloat(v); return v >= 0 && v <= 1 ? v : d; };
   function brPrefs() {
     try {
       const p = JSON.parse(localStorage.getItem(BR_PREF_KEY) || "{}");
-      return { tones: !!p.tones, haptics: !!p.haptics, where: p.where === "outside" ? "outside" : "sauna", ease: !!p.ease };
-    } catch { return { tones: false, haptics: false, where: "sauna", ease: false }; }
+      const v2 = p.v === 2; // v2 = sound on by default (older saved flags were silent-by-default)
+      return {
+        v: 2,
+        tones: v2 ? p.tones !== false : true,
+        music: v2 ? p.music !== false : true,
+        voice: v2 ? !!p.voice : false,
+        haptics: v2 ? p.haptics !== false : true,
+        musicVol: brNum(p.musicVol, 0.7),
+        cueVol: brNum(p.cueVol, 0.8),
+        where: p.where === "outside" ? "outside" : "sauna",
+        ease: !!p.ease,
+      };
+    } catch { return { v: 2, tones: true, music: true, voice: false, haptics: true, musicVol: 0.7, cueVol: 0.8, where: "sauna", ease: false }; }
   }
   function brSavePrefs(p) { try { localStorage.setItem(BR_PREF_KEY, JSON.stringify(p)); } catch (_) {} }
   function brBolt() { try { const b = JSON.parse(localStorage.getItem(BR_BOLT_KEY) || "[]"); return Array.isArray(b) ? b : []; } catch { return []; } }
@@ -2537,36 +2562,236 @@
   }
   const BR_CUE = { in: "Inhale", top: "Top up", hold: "Hold", out: "Exhale", easy: "Breathe easy" };
 
-  // ---- feedback: soft sine tones + light haptics (opt-in) ----
-  function brTone(freq, dur, vol) {
+  // ---- breath audio: ambient bed + pacer cues + optional voice + haptics ----
+  // Everything is generated with Web Audio (no external tracks). Started from the Start/Resume tap so iOS lets it play.
+  let brAmb = null, brSilentEl = null, brSilentUrl = "", brVoiceReady = false, brSndShown = "";
+  const brCanVibrate = () => typeof navigator.vibrate === "function";
+  const brCanSpeak = () => "speechSynthesis" in window && typeof SpeechSynthesisUtterance !== "undefined";
+
+  function brSilentWav() {
+    if (brSilentUrl) return brSilentUrl;
+    const sr = 8000, n = sr, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+    const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    w(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); w(8, "WAVE"); w(12, "fmt "); v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true);
+    v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, i % 50 === 0 ? 1 : 0, true); // inaudible, but not pure digital silence
+    brSilentUrl = URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+    return brSilentUrl;
+  }
+  // iOS: a playing <audio> element + audioSession "playback" lets Web Audio sound through the ringer switch.
+  function brMediaOn() {
+    try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (_) {}
     try {
-      ensureAudio();
-      const ctx = audioCtx;
-      if (!ctx) return;
-      const t = ctx.currentTime + 0.02;
-      const osc = ctx.createOscillator(), gain = ctx.createGain();
-      osc.type = "sine"; osc.frequency.value = freq;
-      osc.connect(gain); gain.connect(ctx.destination);
-      gain.gain.setValueAtTime(0.0001, t);
-      gain.gain.exponentialRampToValueAtTime(vol, t + Math.min(0.25, dur / 3));
-      gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      osc.start(t); osc.stop(t + dur + 0.05);
+      if (!brSilentEl) {
+        brSilentEl = new Audio();
+        brSilentEl.src = brSilentWav();
+        brSilentEl.loop = true;
+        brSilentEl.setAttribute("playsinline", "");
+        brSilentEl.setAttribute("aria-hidden", "true");
+      }
+      const pr = brSilentEl.play();
+      if (pr && pr.catch) pr.catch(() => {});
+    } catch (_) {}
+    try {
+      if ("mediaSession" in navigator && window.MediaMetadata) {
+        navigator.mediaSession.metadata = new MediaMetadata({ title: "Breath session", artist: "ARETE" });
+        navigator.mediaSession.setActionHandler("pause", () => { if (brRun && !brRun.done && !brRun.pausedAt) brPause(); });
+        navigator.mediaSession.setActionHandler("play", () => { if (brRun && !brRun.done && brRun.pausedAt) brPause(); });
+      }
     } catch (_) {}
   }
-  function brCueFx(ph) {
-    const p = brPrefs();
-    if (p.tones) {
-      if (ph === "in") brTone(392, 0.6, 0.07);
-      else if (ph === "top") brTone(494, 0.3, 0.05);
-      else if (ph === "out") brTone(294, 0.7, 0.06);
-      else if (ph === "hold") brTone(330, 0.25, 0.035);
+  function brMediaOff() {
+    try { if (brSilentEl) brSilentEl.pause(); } catch (_) {}
+    try { if (navigator.audioSession) navigator.audioSession.type = "auto"; } catch (_) {}
+    try { if ("mediaSession" in navigator) { navigator.mediaSession.metadata = null; navigator.mediaSession.setActionHandler("pause", null); navigator.mediaSession.setActionHandler("play", null); } } catch (_) {}
+  }
+  function brVoiceUnlock() {
+    if (brVoiceReady || !brCanSpeak()) return;
+    try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; speechSynthesis.speak(u); brVoiceReady = true; } catch (_) {}
+  }
+  function brSpeak(text) {
+    if (!brCanSpeak()) return;
+    try {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 0.82; u.pitch = 0.85; u.volume = Math.max(0.15, brNum(brPrefs().cueVol, 0.8));
+      speechSynthesis.speak(u);
+    } catch (_) {}
+  }
+  function brCueGain() { const v = brNum(brPrefs().cueVol, 0.8); return 0.28 * v * v; }
+  function brAmbLevel() { const v = brNum(brPrefs().musicVol, 0.7); return v * v; }
+
+  function brNoiseBuf(ctx) {
+    const len = ctx.sampleRate * 6, b = ctx.createBuffer(1, len, ctx.sampleRate), d = b.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = last * 3.5; } // brown-ish noise
+    const fade = 2000; // loop-safe edges
+    for (let i = 0; i < fade; i++) { const k = i / fade; d[i] *= k; d[len - 1 - i] *= k; }
+    return b;
+  }
+  // Warm, slowly evolving pad: open fifths with detuned pairs, slow swells, soft filtered noise "air".
+  function brAmbStart() {
+    if (!brPrefs().music) return;
+    ensureAudio();
+    const ctx = audioCtx;
+    if (!ctx) return;
+    if (brAmb) {
+      try { const t = ctx.currentTime; brAmb.master.gain.cancelScheduledValues(t); brAmb.master.gain.setValueAtTime(brAmb.master.gain.value, t); brAmb.master.gain.linearRampToValueAtTime(brAmbLevel(), t + 1.5); } catch (_) {}
+      return;
     }
+    try {
+      const t = ctx.currentTime, srcs = [];
+      const master = ctx.createGain(); master.gain.setValueAtTime(0.0001, t); master.gain.linearRampToValueAtTime(brAmbLevel(), t + 4);
+      const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 850; lp.Q.value = 0.5;
+      lp.connect(master); master.connect(ctx.destination);
+      const lfo = (rate, depth, param, phase) => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = "sine"; o.frequency.value = rate; g.gain.value = depth;
+        o.connect(g); g.connect(param); o.start(t + (phase || 0)); srcs.push(o);
+      };
+      const notes = [[73.42, 0.30], [110, 0.24], [146.83, 0.2], [220, 0.16], [293.66, 0.12], [369.99, 0.07], [440, 0.05]];
+      notes.forEach(([f, a], i) => {
+        const vg = ctx.createGain(); vg.gain.value = a * 0.62 * 0.17; vg.connect(lp);
+        lfo(0.035 + i * 0.011, a * 0.38 * 0.17, vg.gain, i * 1.7);
+        [-6, 5].forEach((cents) => {
+          const o = ctx.createOscillator(); o.type = i < 2 ? "triangle" : "sine"; o.frequency.value = f; o.detune.value = cents;
+          o.connect(vg); o.start(t); srcs.push(o);
+        });
+      });
+      lfo(0.045, 220, lp.frequency, 0);
+      const nz = ctx.createBufferSource(); nz.buffer = brNoiseBuf(ctx); nz.loop = true;
+      const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 420; bp.Q.value = 0.6;
+      const ng = ctx.createGain(); ng.gain.value = 0.05;
+      nz.connect(bp); bp.connect(ng); ng.connect(lp); nz.start(t); srcs.push(nz);
+      lfo(0.07, 0.03, ng.gain, 0);
+      brAmb = { master, lp, srcs };
+    } catch (_) { brAmb = null; }
+  }
+  function brAmbStop(fade = 2) {
+    const a = brAmb;
+    if (!a) return;
+    brAmb = null;
+    try {
+      const ctx = audioCtx, t = ctx.currentTime;
+      a.master.gain.cancelScheduledValues(t); a.master.gain.setValueAtTime(Math.max(0.0001, a.master.gain.value), t);
+      a.master.gain.linearRampToValueAtTime(0.0001, t + fade);
+      setTimeout(() => { a.srcs.forEach((s) => { try { s.stop(); } catch (_) {} }); try { a.master.disconnect(); } catch (_) {} }, fade * 1000 + 150);
+    } catch (_) {}
+  }
+  function brAmbSwell(ph, lenSec) {
+    if (!brAmb || !audioCtx) return;
+    try {
+      const t = audioCtx.currentTime, f = brAmb.lp.frequency;
+      const target = ph === "in" || ph === "top" ? 1500 : ph === "out" ? 650 : null;
+      if (target) { f.cancelScheduledValues(t); f.setValueAtTime(f.value, t); f.setTargetAtTime(target, t, Math.max(0.6, lenSec / 3)); }
+    } catch (_) {}
+  }
+
+  // One soft cue per breath phase: rising for inhale, level for hold, falling for exhale.
+  function brTone(freq0, freq1, dur, vol, delay) {
+    try {
+      const ctx = audioCtx;
+      if (!ctx) return;
+      const t = ctx.currentTime + 0.03 + (delay || 0);
+      const g = ctx.createGain(), o1 = ctx.createOscillator(), o2 = ctx.createOscillator(), g2 = ctx.createGain();
+      o1.type = "sine"; o2.type = "sine";
+      o1.frequency.setValueAtTime(freq0, t); o1.frequency.linearRampToValueAtTime(freq1, t + dur);
+      o2.frequency.setValueAtTime(freq0 * 2, t); o2.frequency.linearRampToValueAtTime(freq1 * 2, t + dur);
+      g2.gain.value = 0.3; // octave overtone so small phone speakers can reproduce it
+      o1.connect(g); o2.connect(g2); g2.connect(g); g.connect(ctx.destination);
+      const a = Math.min(0.3, dur * 0.35), r = Math.min(0.6, dur * 0.45);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(vol, t + a);
+      g.gain.setValueAtTime(vol, t + Math.max(a, dur - r));
+      g.gain.linearRampToValueAtTime(0.0001, t + dur);
+      o1.start(t); o2.start(t); o1.stop(t + dur + 0.05); o2.stop(t + dur + 0.05);
+    } catch (_) {}
+  }
+  const BR_SAY = { in: "Breathe in", top: "A little more", hold: "Hold", out: "Breathe out" };
+  function brCueFx(phObj) {
+    const ph = typeof phObj === "string" ? phObj : phObj.ph;
+    const len = typeof phObj === "string" ? 0 : phObj.len || 0;
+    const lag = typeof phObj === "string" ? 0 : (phObj.f || 0) * len; // seconds already elapsed in this phase
+    const p = brPrefs();
+    ensureAudio();
+    if (p.tones && audioCtx) {
+      const dur = Math.max(0.5, Math.min(2.6, (len || 3) - lag - 0.1)), v = brCueGain();
+      if (ph === "in") brTone(392, 523.25, dur, v);
+      else if (ph === "top") brTone(587.33, 659.25, Math.min(dur, 0.8), v * 0.9);
+      else if (ph === "out") brTone(523.25, 392, dur, v);
+      else if (ph === "hold") brTone(440, 440, Math.min(dur, 0.9), v * 0.6);
+    }
+    if (p.voice && BR_SAY[ph]) brSpeak(BR_SAY[ph]);
+    if (p.music && ph !== "easy" && len) brAmbSwell(ph, Math.max(1, len - lag));
     if (p.haptics) vibrate(ph === "in" ? 30 : ph === "out" ? [15, 70, 15] : 10);
   }
   function brChime() {
     const p = brPrefs();
-    if (p.tones) { brTone(523, 1.2, 0.07); setTimeout(() => brTone(784, 1.6, 0.05), 350); }
+    ensureAudio();
+    if (p.tones && audioCtx) { const v = brCueGain(); brTone(523.25, 523.25, 1.6, v); brTone(783.99, 783.99, 2.2, v * 0.8, 0.35); }
+    if (p.voice) brSpeak("Session complete");
     if (p.haptics) vibrate([40, 80, 40]);
+  }
+  // Session-level helpers (call from a tap: Start, Resume, Test)
+  function brAudioStart() {
+    brMediaOn(); ensureAudio(); brVoiceUnlock(); brAmbStart();
+  }
+  function brAudioPause() { brAmbStop(1.2); try { if (brCanSpeak()) speechSynthesis.cancel(); } catch (_) {} brMediaOff(); }
+  function brAudioEnd(fade) { brAmbStop(fade || 2); try { if (brCanSpeak()) speechSynthesis.cancel(); } catch (_) {} setTimeout(() => { if (!brAmb) brMediaOff(); }, (fade || 2) * 1000 + 300); }
+  function brAudioKick() { // any tap on a live session: recover after reload / interruption
+    if (!brRun || brRun.done || brRun.pausedAt) return;
+    brMediaOn(); ensureAudio();
+    if (!brAmb) brAmbStart();
+  }
+  function brTestSound() {
+    brMediaOn(); ensureAudio(); brVoiceUnlock();
+    const p = brPrefs(), v = Math.max(brCueGain(), 0.12);
+    brTone(392, 523.25, 1.4, v); brTone(440, 440, 0.6, v * 0.6, 1.6); brTone(523.25, 392, 1.4, v, 2.4);
+    if (p.voice) { brSpeak("Breathe in"); }
+    if (!(brRun && !brRun.done && !brRun.pausedAt)) setTimeout(brMediaOff, 4500);
+    setTimeout(() => toast(audioCtx && audioCtx.state === "running" ? "Test played. If silent: raise media volume with the side buttons." : "Audio is blocked. Tap Test sound again."), 300);
+  }
+  function brOnPref(el) {
+    const k = el.dataset.brPref, p = brPrefs();
+    p[k] = el.checked; brSavePrefs(p);
+    if (el.checked) { ensureAudio(); if (k === "voice") brVoiceUnlock(); }
+    const live = brRun && !brRun.done && !brRun.pausedAt;
+    if (k === "music" && live) { if (el.checked) { brMediaOn(); brAmbStart(); } else brAmbStop(1); }
+    if (k === "voice" && !el.checked) { try { if (brCanSpeak()) speechSynthesis.cancel(); } catch (_) {} }
+    if (k === "haptics" && el.checked) vibrate(30);
+    document.querySelectorAll(`[data-br-pref="${k}"]`).forEach((x) => { x.checked = el.checked; });
+    if (k === "ease") renderBreath();
+  }
+  function brOnVol(el) {
+    const p = brPrefs(); p[el.dataset.brVol] = Math.max(0, Math.min(1, parseFloat(el.value) / 100)); brSavePrefs(p);
+    document.querySelectorAll(`[data-br-vol="${el.dataset.brVol}"]`).forEach((x) => { if (x !== el) x.value = el.value; });
+    if (brAmb && audioCtx) { try { brAmb.master.gain.cancelScheduledValues(audioCtx.currentTime); brAmb.master.gain.setTargetAtTime(Math.max(0.0001, brAmbLevel()), audioCtx.currentTime, 0.05); } catch (_) {} }
+  }
+  function brSoundHtml(pr) {
+    const hap = brCanVibrate(), say = brCanSpeak();
+    return `
+      <div class="br-sound">
+        <label class="br-check"><input type="checkbox" data-br-pref="music"${pr.music ? " checked" : ""}> Ambient music</label>
+        <input class="br-range" type="range" min="0" max="100" step="5" value="${Math.round(pr.musicVol * 100)}" data-br-vol="musicVol" aria-label="Music volume">
+        <label class="br-check"><input type="checkbox" data-br-pref="tones"${pr.tones ? " checked" : ""}> Breath tones (rise · level · fall)</label>
+        <input class="br-range" type="range" min="0" max="100" step="5" value="${Math.round(pr.cueVol * 100)}" data-br-vol="cueVol" aria-label="Cue volume">
+        <label class="br-check"><input type="checkbox" data-br-pref="voice"${pr.voice ? " checked" : ""}${say ? "" : " disabled"}> Spoken cues (&ldquo;Breathe in&rdquo;, &ldquo;Hold&rdquo;, &ldquo;Breathe out&rdquo;)</label>
+        <label class="br-check"><input type="checkbox" data-br-pref="haptics"${pr.haptics && hap ? " checked" : ""}${hap ? "" : " disabled"}> Haptic pulse${hap ? "" : " (not available on this device)"}</label>
+        <button type="button" class="mt-btn br-test" data-br-test>Test sound</button>
+        <p class="br-note">Sound is the main cue. iPhone web apps can't vibrate, so haptics work on Android only. Turn up media volume with the side buttons; sessions ask the phone to play even with the ringer on silent.</p>
+      </div>`;
+  }
+  function brSndState() {
+    const el = document.getElementById("br-snd-state");
+    if (!el) return;
+    const p = brPrefs(), any = p.music || p.tones || p.voice;
+    let s;
+    if (!any) s = "Sound off";
+    else if (!(window.AudioContext || window.webkitAudioContext)) s = "Audio isn't supported in this browser";
+    else if (!audioCtx || audioCtx.state !== "running") s = "Sound paused · tap the screen to enable";
+    else s = "Sound on" + (p.music && !brAmb ? " · tap to start music" : "");
+    if (s !== brSndShown) { brSndShown = s; el.textContent = s; }
   }
 
   // ---- wake lock ----
@@ -2594,18 +2819,18 @@
     brBegin({ kind: "free", tier: 0, tech: tech.id, title: tech.name, kicker: tech.sauna ? "Free pick · hold-free" : "Free pick · outside the sauna", sauna: tech.sauna, segs: brFreeSegs(tech), hint: tech.hint });
   }
   function brBegin(o) {
-    ensureAudio();
+    brAudioStart();
     brRun = Object.assign(o, { id: brNewId(), startAt: Date.now(), pausedAt: 0, pausedMs: 0, easeAt: null, done: false, quote: Math.floor(Math.random() * BR_STOIC.length) });
     brResult = null; brLastKey = ""; brLastWall = Date.now();
     brPersistRun(); brWakeOn(); brEnsureTick();
     openBreathRun();
     const st0 = brStatus();
-    if (st0 && st0.ph.ph !== "easy") { brLastKey = st0.i + "|" + st0.ph.key + "|" + brPat(st0.pat); brCueFx(st0.ph.ph); }
+    if (st0 && st0.ph.ph !== "easy") { brLastKey = st0.i + "|" + st0.ph.key + "|" + brPat(st0.pat); brCueFx(st0.ph); }
   }
   function brPause() {
     if (!brRun || brRun.done) return;
-    if (brRun.pausedAt) { brRun.pausedMs += Date.now() - brRun.pausedAt; brRun.pausedAt = 0; brWakeOn(); brLastWall = Date.now(); }
-    else { brRun.pausedAt = Date.now(); brWakeOff(); }
+    if (brRun.pausedAt) { brRun.pausedMs += Date.now() - brRun.pausedAt; brRun.pausedAt = 0; brWakeOn(); brLastWall = Date.now(); brAudioStart(); }
+    else { brRun.pausedAt = Date.now(); brWakeOff(); brAudioPause(); }
     brPersistRun(); brPaint();
   }
   function brEase() {
@@ -2620,6 +2845,7 @@
       toast("Stopped early. Doesn't count, and that's fine. Never push through discomfort.");
     }
     brConfirmEnd = false;
+    brAudioEnd(1.5);
     brRun = null; brPersistRun(); brWakeOff(); brStopTick();
     openBreath();
   }
@@ -2647,11 +2873,12 @@
     brRun.done = true; brRun.doneAt = Date.now();
     brPersistRun(); brWakeOff();
     if (live) brChime();
+    brAudioEnd(3);
     brPaint();
     if (state.screen === "home") renderBreathTile();
     else if (state.screen === "breath") { const y = window.scrollY; renderBreath(); window.scrollTo(0, y); }
   }
-  function brEnsureTick() { if (!brInt) brInt = setInterval(brTick, 200); if (!brRaf) brRaf = requestAnimationFrame(brFrame); }
+  function brEnsureTick() { if (!brInt) brInt = setInterval(brTick, 100); if (!brRaf) brRaf = requestAnimationFrame(brFrame); }
   function brStopTick() { clearInterval(brInt); brInt = null; if (brRaf) cancelAnimationFrame(brRaf); brRaf = 0; }
   function brTick() {
     if (!brRun || brRun.done) { if (!brRun) brStopTick(); return; }
@@ -2664,7 +2891,7 @@
     const st = brStatus();
     if (!st) return;
     const key = st.i + "|" + st.ph.key + "|" + (st.pat ? brPat(st.pat) : "");
-    if (key !== brLastKey) { if (brLastKey && live && st.ph.ph !== "easy") brCueFx(st.ph.ph); brLastKey = key; }
+    if (key !== brLastKey) { if (brLastKey && live && st.ph.ph !== "easy") brCueFx(st.ph); brLastKey = key; }
     if (state.screen === "breathrun") brPaintText(st);
     else if (state.screen === "home" && Math.floor(now / 5000) !== brTileTick) { brTileTick = Math.floor(now / 5000); renderBreathTile(); }
   }
@@ -2682,6 +2909,7 @@
     if (!brRun || brRun.done) return;
     if (document.hidden) { brPersistRun(); return; }
     brLastWall = 0; // force a silent resync
+    try { if (audioCtx && audioCtx.state !== "running") audioCtx.resume().catch(() => {}); } catch (_) {}
     brTick();
     if (brRun && !brRun.done) { if (!brRun.pausedAt) brWakeOn(); brEnsureTick(); }
   });
@@ -2858,10 +3086,9 @@
       ${brBoltHtml()}
 
       <details class="lift-card mob-card br-card">
-        <summary class="lift-header mob-summary"><div class="lift-name">Settings &amp; history</div><div class="lift-target">Soft tones, haptics, recent sessions</div></summary>
+        <summary class="lift-header mob-summary"><div class="lift-name">Settings &amp; history</div><div class="lift-target">Sound, music, voice, recent sessions</div></summary>
         <div class="br-pad">
-          <label class="br-check"><input type="checkbox" data-br-pref="tones"${pr.tones ? " checked" : ""}> Soft tones on each breath</label>
-          <label class="br-check"><input type="checkbox" data-br-pref="haptics"${pr.haptics ? " checked" : ""}> Haptics on each breath (Android)</label>
+          ${brSoundHtml(pr)}
           <p class="br-note">The screen stays awake during a session where the browser supports it.</p>
           ${recent.length ? `<div class="br-hist">${recent.map((e) => `<div><span>${new Date(e.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span><span>${e.tier ? "Tier " + ROMAN[e.tier - 1] : esc((BR_TECH.find((x) => x.id === e.tech) || {}).name || "Free")}</span><span class="${e.counted ? "ok" : ""}">${e.rating === "ok" ? (e.counted ? "Counted" : "Comfortable") : e.rating === "hard" ? "Too difficult" : "Stopped early"}</span></div>`).join("")}</div>` : ""}
           <p class="br-note">Coaching milestones, not a medical protocol. Repeat or step down a tier whenever you like.</p>
@@ -2915,7 +3142,7 @@
     });
     root.addEventListener("change", (e) => {
       const pf = e.target.closest("[data-br-pref]");
-      if (pf) { const p = brPrefs(); p[pf.dataset.brPref] = pf.checked; brSavePrefs(p); if (pf.dataset.brPref === "ease") renderBreath(); return; }
+      if (pf) { brOnPref(pf); return; }
       if (e.target.matches("[data-br-ack]")) { brAck = e.target.checked; brFreeOpen = true; renderBreath(); }
     });
     root.addEventListener("toggle", (e) => {
@@ -2947,7 +3174,7 @@
       });
       root.addEventListener("change", (e) => {
         const pf = e.target.closest("[data-br-pref]");
-        if (pf) { const p = brPrefs(); p[pf.dataset.brPref] = pf.checked; brSavePrefs(p); if (pf.checked) ensureAudio(); }
+        if (pf) brOnPref(pf);
       });
     }
     root.dataset.view = "";
@@ -2988,10 +3215,8 @@
             <button type="button" class="btn-heavy mt-go" data-br-run="pause" id="br-pause">Pause</button>
           </div>
           <button type="button" class="mt-btn br-ease" data-br-run="ease" id="br-ease" hidden>Ease to 5/5</button>
-          <div class="br-toggles">
-            <label class="br-check"><input type="checkbox" data-br-pref="tones"${pr.tones ? " checked" : ""}> Soft tones</label>
-            <label class="br-check"><input type="checkbox" data-br-pref="haptics"${pr.haptics ? " checked" : ""}> Haptics</label>
-          </div>
+          <div class="br-snd-state" id="br-snd-state" aria-live="off"></div>
+          <details class="br-sound-wrap"><summary>Sound &amp; voice</summary>${brSoundHtml(pr)}</details>
           <p class="br-safety">${esc(BR_SAFETY)} 15:00 is a ceiling, not a target.</p>
         </div>`;
     }
@@ -3013,6 +3238,7 @@
     document.getElementById("br-total").textContent = formatTime(Math.ceil(st.left / 1000));
     document.getElementById("br-seg").textContent = st.seg.label;
     document.getElementById("br-seg-left").textContent = formatTime(Math.ceil(st.segLeft / 1000)) + " left";
+    brSndState();
     document.getElementById("br-pace").textContent = st.pat ? brPatText(st.pat) + (st.pat.length === 2 ? ` · ${(60 / (st.pat[0].s + st.pat[1].s)).toFixed(1).replace(".0", "")} breaths/min` : "") : "No pacer · quiet nasal breathing";
     $$("#br-steps i").forEach((el, i) => (el.className = i < st.i ? "on" : i === st.i ? "now" : ""));
     const wrap = document.querySelector(".br-orb-wrap");
@@ -3232,7 +3458,12 @@
       sq.classList.remove("swap"); void sq.offsetWidth; sq.classList.add("swap");
       renderStoic();
     });
-    document.addEventListener("pointerdown", ensureAudio);
+    ["pointerdown", "touchend", "click"].forEach((ev) => document.addEventListener(ev, () => { ensureAudio(); }, { passive: true }));
+    document.addEventListener("click", (e) => {
+      if (e.target.closest && e.target.closest("[data-br-test]")) { brTestSound(); return; }
+      if (brRun && !brRun.done && state.screen === "breathrun" && !e.target.closest("[data-br-run]")) brAudioKick();
+    });
+    document.addEventListener("input", (e) => { const r = e.target.closest && e.target.closest("[data-br-vol]"); if (r) brOnVol(r); });
     $("#header-back").addEventListener("click", () => {
       if (state.screen === "session") {
         history.replaceState(null, "", "#phase/" + state.week);
