@@ -1045,18 +1045,23 @@
       if (!AC) return;
       if (!audioCtx) {
         audioCtx = new AC();
-        audioCtx.onstatechange = () => { try { brSndState(); } catch (_) {} };
+        audioCtx.onstatechange = () => {
+          try { brSndState(); } catch (_) {}
+          try { if (typeof brAudioRecover === "function") brAudioRecover(); } catch (_) {}
+        };
       }
       if (audioCtx.state !== "running") {
-        // iOS: resume + a one-sample silent buffer inside the tap unlocks output.
+        // iOS: resume + a short silent buffer inside the tap unlocks output.
         const pr = audioCtx.resume();
         if (pr && pr.catch) pr.catch(() => {});
         try {
+          const n = Math.max(1, Math.floor((audioCtx.sampleRate || 44100) * 0.05));
           const src = audioCtx.createBufferSource();
-          src.buffer = audioCtx.createBuffer(1, 1, 22050);
+          src.buffer = audioCtx.createBuffer(1, n, audioCtx.sampleRate || 44100);
           src.connect(audioCtx.destination);
           src.start(0);
         } catch (_) {}
+        return pr;
       }
     } catch (_) {}
   }
@@ -1584,7 +1589,7 @@
     showHeld(q, a);
     try {
       if ("Notification" in window && Notification.permission === "granted") {
-        const opts = { body: "\u201C" + q + "\u201D \u2014 " + a, tag: "arete-held", icon: "./icon-192.png?v=24", badge: "./icon-192.png?v=24" };
+        const opts = { body: "\u201C" + q + "\u201D \u2014 " + a, tag: "arete-held", icon: "./icon-192.png?v=25", badge: "./icon-192.png?v=25" };
         if (navigator.serviceWorker && navigator.serviceWorker.ready) {
           navigator.serviceWorker.ready.then((reg) => reg.showNotification("You held the line.", opts)).catch(() => {});
         }
@@ -1801,7 +1806,7 @@
   function swNotify(title, opts) {
     try {
       if (!("Notification" in window) || Notification.permission !== "granted" || !navigator.serviceWorker) return;
-      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, Object.assign({ icon: "./icon-192.png?v=24", badge: "./icon-192.png?v=24" }, opts))).catch(() => {});
+      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, Object.assign({ icon: "./icon-192.png?v=25", badge: "./icon-192.png?v=25" }, opts))).catch(() => {});
     } catch (_) {}
   }
   function ciSchedule() {
@@ -1817,7 +1822,7 @@
           if (!c.enabled[k.id]) return;
           const ts = base.getTime() + dd * 86400000 + hm(c.times[k.id]) * 60000;
           if (ts <= Date.now() + 30000) return;
-          reg.showNotification("ARETE · " + k.label, { body: "Check-in due. Tap to open.", tag: "arete-ci-" + k.id + "-" + dd, icon: "./icon-192.png?v=24", data: { url: "./#checkin" }, showTrigger: new TimestampTrigger(ts) }).catch(() => {});
+          reg.showNotification("ARETE · " + k.label, { body: "Check-in due. Tap to open.", tag: "arete-ci-" + k.id + "-" + dd, icon: "./icon-192.png?v=25", data: { url: "./#checkin" }, showTrigger: new TimestampTrigger(ts) }).catch(() => {});
         });
       }).catch(() => {});
     } catch (_) {}
@@ -2606,16 +2611,19 @@
 
   function brSilentWav() {
     if (brSilentUrl) return brSilentUrl;
-    const sr = 8000, n = sr, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+    const sr = 8000, n = sr * 2, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
     const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
     w(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); w(8, "WAVE"); w(12, "fmt "); v.setUint32(16, 16, true);
     v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true);
     v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, n * 2, true);
-    for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, i % 50 === 0 ? 1 : 0, true); // inaudible, but not pure digital silence
+    for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, i % 50 === 0 ? 2 : 0, true); // inaudible, but not pure digital silence
     brSilentUrl = URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
     return brSilentUrl;
   }
-  // iOS: a playing <audio> element + audioSession "playback" lets Web Audio sound through the ringer switch.
+  function brSessionLive() {
+    try { return !!(brRun && !brRun.done && !brRun.pausedAt); } catch (_) { return false; }
+  }
+  // iOS: a playing <audio> element + audioSession "playback" keeps Web Audio alive (and works with the ringer switch).
   function brMediaOn() {
     try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (_) {}
     try {
@@ -2623,9 +2631,16 @@
         brSilentEl = new Audio();
         brSilentEl.src = brSilentWav();
         brSilentEl.loop = true;
+        brSilentEl.preload = "auto";
+        brSilentEl.playsInline = true;
         brSilentEl.setAttribute("playsinline", "");
+        brSilentEl.setAttribute("webkit-playsinline", "");
         brSilentEl.setAttribute("aria-hidden", "true");
+        brSilentEl.style.cssText = "position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:0;bottom:0;";
+        document.body.appendChild(brSilentEl);
       }
+      brSilentEl.muted = false;
+      brSilentEl.volume = 1;
       const pr = brSilentEl.play();
       if (pr && pr.catch) pr.catch(() => {});
     } catch (_) {}
@@ -2642,9 +2657,36 @@
     try { if (navigator.audioSession) navigator.audioSession.type = "auto"; } catch (_) {}
     try { if ("mediaSession" in navigator) { navigator.mediaSession.metadata = null; navigator.mediaSession.setActionHandler("pause", null); navigator.mediaSession.setActionHandler("play", null); } } catch (_) {}
   }
+  let brSpeakGen = 0, brResumeBusy = false;
+  function brAmbDuck(on) {
+    if (!brAmb || !audioCtx) return;
+    try {
+      const t = audioCtx.currentTime;
+      const target = Math.max(0.0001, brAmbLevel() * (on ? 0.28 : 1));
+      brAmb.master.gain.cancelScheduledValues(t);
+      brAmb.master.gain.setTargetAtTime(target, t, 0.06);
+    } catch (_) {}
+  }
+  function brAudioRecover() {
+    try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (_) {}
+    try {
+      if (audioCtx && audioCtx.state !== "running" && audioCtx.state !== "closed" && !brResumeBusy) {
+        brResumeBusy = true;
+        const pr = audioCtx.resume();
+        if (pr && pr.then) pr.then(() => { brResumeBusy = false; if (brSessionLive() && audioCtx && audioCtx.state === "running") brAudioRecover(); }).catch(() => { brResumeBusy = false; });
+        else brResumeBusy = false;
+      }
+    } catch (_) { brResumeBusy = false; }
+    if (!brSessionLive()) return;
+    brMediaOn();
+    if (brPrefs().music) {
+      if (!brAmb) brAmbStart();
+      else brAmbDuck(false);
+    }
+  }
   function brVoiceUnlock() {
     if (brVoiceReady || !brCanSpeak()) return;
-    try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; speechSynthesis.speak(u); brVoiceReady = true; } catch (_) {}
+    try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; u.onend = () => brAudioRecover(); u.onerror = () => brAudioRecover(); speechSynthesis.speak(u); brVoiceReady = true; setTimeout(brAudioRecover, 400); } catch (_) {}
   }
   function brSpeak(text) {
     if (!brCanSpeak()) return;
@@ -2652,7 +2694,13 @@
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
       u.rate = 0.82; u.pitch = 0.85; u.volume = Math.max(0.15, brNum(brPrefs().cueVol, 0.8));
+      const gen = ++brSpeakGen;
+      const recover = () => { if (gen !== brSpeakGen) return; try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (_) {} brAudioRecover(); };
+      u.onend = recover;
+      u.onerror = recover;
+      brAmbDuck(true);
       speechSynthesis.speak(u);
+      setTimeout(recover, 2500);
     } catch (_) {}
   }
   function brCueGain() { const v = brNum(brPrefs().cueVol, 0.8); return 0.28 * v * v; }
@@ -2667,29 +2715,37 @@
     return b;
   }
   // Warm, slowly evolving pad: open fifths with detuned pairs, slow swells, soft filtered noise "air".
-  function brAmbStart() {
+  function brAmbStart(force) {
     if (!brPrefs().music) return;
     ensureAudio();
     const ctx = audioCtx;
     if (!ctx) return;
-    if (brAmb) {
-      try { const t = ctx.currentTime; brAmb.master.gain.cancelScheduledValues(t); brAmb.master.gain.setValueAtTime(brAmb.master.gain.value, t); brAmb.master.gain.linearRampToValueAtTime(brAmbLevel(), t + 1.5); } catch (_) {}
+    // iOS: oscillators started while the context is still suspended can stay silent forever.
+    if (ctx.state !== "running") {
+      const pr = ctx.resume();
+      if (pr && pr.then) pr.then(() => { if (brPrefs().music) brAmbStart(true); }).catch(() => {});
       return;
     }
+    if (brAmb && !force) {
+      try { const t = ctx.currentTime; brAmb.master.gain.cancelScheduledValues(t); brAmb.master.gain.setValueAtTime(Math.max(0.0001, brAmb.master.gain.value), t); brAmb.master.gain.linearRampToValueAtTime(brAmbLevel(), t + 1.5); } catch (_) {}
+      return;
+    }
+    if (brAmb && force) brAmbStop(0.05);
     try {
       const t = ctx.currentTime, srcs = [];
-      const master = ctx.createGain(); master.gain.setValueAtTime(0.0001, t); master.gain.linearRampToValueAtTime(brAmbLevel(), t + 4);
-      const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 850; lp.Q.value = 0.5;
+      const master = ctx.createGain(); master.gain.setValueAtTime(0.0001, t); master.gain.linearRampToValueAtTime(brAmbLevel(), t + 2.2);
+      const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1800; lp.Q.value = 0.5;
       lp.connect(master); master.connect(ctx.destination);
       const lfo = (rate, depth, param, phase) => {
         const o = ctx.createOscillator(), g = ctx.createGain();
         o.type = "sine"; o.frequency.value = rate; g.gain.value = depth;
         o.connect(g); g.connect(param); o.start(t + (phase || 0)); srcs.push(o);
       };
-      const notes = [[73.42, 0.30], [110, 0.24], [146.83, 0.2], [220, 0.16], [293.66, 0.12], [369.99, 0.07], [440, 0.05]];
+      // Mid-range heavy so phone speakers can actually reproduce the bed.
+      const notes = [[110, 0.22], [164.81, 0.2], [220, 0.18], [329.63, 0.16], [440, 0.14], [659.25, 0.09], [880, 0.05]];
       notes.forEach(([f, a], i) => {
-        const vg = ctx.createGain(); vg.gain.value = a * 0.62 * 0.17; vg.connect(lp);
-        lfo(0.035 + i * 0.011, a * 0.38 * 0.17, vg.gain, i * 1.7);
+        const vg = ctx.createGain(); vg.gain.value = a * 0.28; vg.connect(lp);
+        lfo(0.035 + i * 0.011, a * 0.16, vg.gain, i * 1.7);
         [-6, 5].forEach((cents) => {
           const o = ctx.createOscillator(); o.type = i < 2 ? "triangle" : "sine"; o.frequency.value = f; o.detune.value = cents;
           o.connect(vg); o.start(t); srcs.push(o);
@@ -2751,12 +2807,19 @@
     const lag = typeof phObj === "string" ? 0 : (phObj.f || 0) * len; // seconds already elapsed in this phase
     const p = brPrefs();
     ensureAudio();
-    if (p.tones && audioCtx) {
+    const playTones = () => {
+      if (!brPrefs().tones || !audioCtx) return;
       const dur = Math.max(0.5, Math.min(2.6, (len || 3) - lag - 0.1)), v = brCueGain();
       if (ph === "in") brTone(392, 523.25, dur, v);
       else if (ph === "top") brTone(587.33, 659.25, Math.min(dur, 0.8), v * 0.9);
       else if (ph === "out") brTone(523.25, 392, dur, v);
       else if (ph === "hold") brTone(440, 440, Math.min(dur, 0.9), v * 0.6);
+    };
+    if (p.tones && audioCtx) {
+      if (audioCtx.state !== "running") {
+        const pr = audioCtx.resume();
+        if (pr && pr.then) pr.then(playTones).catch(() => {});
+      } else playTones();
     }
     if (p.voice && BR_SAY[ph]) brSpeak(BR_SAY[ph]);
     if (p.music && ph !== "easy" && len) brAmbSwell(ph, Math.max(1, len - lag));
@@ -2771,21 +2834,31 @@
   }
   // Session-level helpers (call from a tap: Start, Resume, Test)
   function brAudioStart() {
-    brMediaOn(); ensureAudio(); brVoiceUnlock(); brAmbStart();
+    // Do not silent-speak here: speechSynthesis steals the iOS audio session from Web Audio.
+    // Voice still unlocks from the first spoken cue in this same Start tap.
+    brMediaOn();
+    const pr = ensureAudio();
+    brAmbStart();
+    if (pr && pr.then) pr.then(() => { if (brPrefs().music) brAmbStart(); }).catch(() => {});
   }
   function brAudioPause() { brAmbStop(1.2); try { if (brCanSpeak()) speechSynthesis.cancel(); } catch (_) {} brMediaOff(); }
   function brAudioEnd(fade) { brAmbStop(fade || 2); try { if (brCanSpeak()) speechSynthesis.cancel(); } catch (_) {} setTimeout(() => { if (!brAmb) brMediaOff(); }, (fade || 2) * 1000 + 300); }
   function brAudioKick() { // any tap on a live session: recover after reload / interruption
-    if (!brRun || brRun.done || brRun.pausedAt) return;
+    if (!brSessionLive()) return;
     brMediaOn(); ensureAudio();
-    if (!brAmb) brAmbStart();
+    brAudioRecover();
   }
   function brTestSound() {
-    brMediaOn(); ensureAudio(); brVoiceUnlock();
-    const p = brPrefs(), v = Math.max(brCueGain(), 0.12);
-    brTone(392, 523.25, 1.4, v); brTone(440, 440, 0.6, v * 0.6, 1.6); brTone(523.25, 392, 1.4, v, 2.4);
-    if (p.voice) { brSpeak("Breathe in"); }
-    if (!(brRun && !brRun.done && !brRun.pausedAt)) setTimeout(brMediaOff, 4500);
+    brMediaOn();
+    const pr = ensureAudio();
+    const play = () => {
+      const p = brPrefs(), v = Math.max(brCueGain(), 0.12);
+      brTone(392, 523.25, 1.4, v); brTone(440, 440, 0.6, v * 0.6, 1.6); brTone(523.25, 392, 1.4, v, 2.4);
+      if (p.voice) brSpeak("Breathe in");
+    };
+    if (pr && pr.then) pr.then(play).catch(() => play());
+    else play();
+    if (!brSessionLive()) setTimeout(brMediaOff, 4500);
     setTimeout(() => toast(audioCtx && audioCtx.state === "running" ? "Test played. If silent: raise media volume with the side buttons." : "Audio is blocked. Tap Test sound again."), 300);
   }
   function brOnPref(el) {
@@ -2815,7 +2888,7 @@
         <label class="br-check"><input type="checkbox" data-br-pref="voice"${pr.voice ? " checked" : ""}${say ? "" : " disabled"}> Spoken cues (&ldquo;Breathe in&rdquo;, &ldquo;Hold&rdquo;, &ldquo;Breathe out&rdquo;)</label>
         <label class="br-check"><input type="checkbox" data-br-pref="haptics"${pr.haptics && hap ? " checked" : ""}${hap ? "" : " disabled"}> Haptic pulse${hap ? "" : " (not available on this device)"}</label>
         <button type="button" class="mt-btn br-test" data-br-test>Test sound</button>
-        <p class="br-note">Sound is the main cue. iPhone web apps can't vibrate, so haptics work on Android only. Turn up media volume with the side buttons; sessions ask the phone to play even with the ringer on silent.</p>
+        <p class="br-note">Sound is the main cue. iPhone web apps can't vibrate, so haptics work on Android only. Turn up media volume with the side buttons (that's separate from ringer volume). If voice plays but music doesn't, tap Test sound.</p>
       </div>`;
   }
   function brSndState() {
@@ -2945,11 +3018,11 @@
     if (!brRun || brRun.done) return;
     if (document.hidden) { brPersistRun(); return; }
     brLastWall = 0; // force a silent resync
-    try { if (audioCtx && audioCtx.state !== "running") audioCtx.resume().catch(() => {}); } catch (_) {}
+    if (!brRun.pausedAt) brAudioRecover();
     brTick();
     if (brRun && !brRun.done) { if (!brRun.pausedAt) brWakeOn(); brEnsureTick(); }
   });
-  window.addEventListener("pageshow", () => { if (brRun && !brRun.done) { brLastWall = 0; brTick(); } });
+  window.addEventListener("pageshow", () => { if (brRun && !brRun.done) { brLastWall = 0; if (!brRun.pausedAt) brAudioRecover(); brTick(); } });
   if (brRun && !brRun.done) { brLastWall = 0; brEnsureTick(); }
 
   // ---- screens ----
