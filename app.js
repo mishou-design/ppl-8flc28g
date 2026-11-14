@@ -743,22 +743,45 @@
     return best;
   }
 
-  function isWeekComplete(week) {
-    return DAYS.every((d) =>
-      liftsFor(d, week).some((lift, li) =>
-        Array.from({ length: lift.sets }, (_, si) => si).some(
-          (si) => (state.logs[logKey(d.id, week, li, si)] || {}).done
-        )
-      )
-    );
+  // --- completion ---
+  // A set counts if it was checked off or logged (reps/weight/RIR). Existing keys are never rewritten.
+  function isSetLogged(v) {
+    return isFilled(v);
   }
 
-
+  // A workout (day) is complete only when every scheduled set is logged.
   function isDayDone(d, week) {
-    return liftsFor(d, week).some((lift, li) =>
-      Array.from({ length: lift.sets }, (_, si) => si).some((si) => (state.logs[logKey(d.id, week, li, si)] || {}).done)
+    return liftsFor(d, week).every((lift, li) =>
+      Array.from({ length: lift.sets }, (_, si) => si).every((si) => isSetLogged(state.logs[logKey(d.id, week, li, si)]))
     );
   }
+
+  // A week is complete only when all of its workouts are complete.
+  function isWeekComplete(week) {
+    return DAYS.every((d) => isDayDone(d, week));
+  }
+
+  // A phase (the 3-week block) is complete only when every week in it is complete.
+  function isPhaseComplete(b) {
+    if (!b || b.firstWeek > b.lastWeek) return false;
+    for (let w = b.firstWeek; w <= b.lastWeek; w++) {
+      if (!isWeekComplete(w)) return false;
+    }
+    return true;
+  }
+
+  function phaseWorkouts(b) {
+    let done = 0;
+    let weeksDone = 0;
+    for (let w = b.firstWeek; w <= b.lastWeek; w++) {
+      done += DAYS.filter((d) => isDayDone(d, w)).length;
+      if (isWeekComplete(w)) weeksDone += 1;
+    }
+    const weekCount = b.lastWeek - b.firstWeek + 1;
+    return { done, total: weekCount * DAYS.length, weeksDone, weekCount };
+  }
+  // --- /completion ---
+
   const ROMAN = ["I", "II", "III", "IV", "V", "VI"];
   const GODS = {
     hub: { img: "./img/bg-hub.webp", color: "#4da3ff" },
@@ -770,10 +793,9 @@
     legs: { god: "Hermes", img: "./img/bg-legs.webp", color: "#f2c14e" },
     breath: { god: "Aeolus", title: "The Winds", sub: "Slow the breath. Command the calm.", img: "./img/bg-breath.webp", color: "#a8e6ff" },
   };
-  const phaseGod = (weekInBlock) => GODS["phase" + (((weekInBlock - 1) % 3) + 1)];
-  function phaseLabel(week) {
-    const b = blockInfo(week);
-    return { roman: ROMAN[b.weekInBlock - 1] || String(b.weekInBlock), of: ROMAN[b.blockLen - 1] || String(b.blockLen), b };
+  function phaseMeta(b) {
+    const i = ((b.block - 1) % 3) + 1;
+    return { index: i, roman: ROMAN[i - 1] || String(i), god: GODS["phase" + i], key: "phase" + i };
   }
 
   // ---- Background layer: two stacked images that crossfade per section ----
@@ -879,16 +901,23 @@
     c.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") enter(); });
   }
 
-  // Auto-advance: once every day of the current week has at least one set checked off,
-  // the app opens on the next week (and the next block after week 3).
+  // Auto-advance: once every workout of the current week is fully logged,
+  // the app opens on the next week (and the next phase after the last week).
+  // "Phase complete" is reserved for finishing every week in the phase.
   function autoAdvance() {
     const start = state.week;
+    const startBlock = blockInfo(start);
     while (state.week < MAX_WEEK && isWeekComplete(state.week)) state.week += 1;
     if (state.week !== start) {
       saveWeek(state.week);
       const b = blockInfo(state.week);
-      const fresh = b.weekInBlock === 1;
-      toast(`Phase complete. Mission accomplished. Now Rotation ${b.block} • Phase ${ROMAN[b.weekInBlock - 1] || b.weekInBlock}` + (fresh ? " · New lifts" : "") + " · \u201C" + pick(STOIC)[0] + "\u201D");
+      const p = phaseMeta(b);
+      if (b.firstWeek !== startBlock.firstWeek && isPhaseComplete(startBlock)) {
+        const fresh = b.weekInBlock === 1 && !(b.block === 1 && b.cycle === 1);
+        toast(`Phase complete. Mission accomplished. Now Phase ${p.roman} \u00B7 ${p.god.title}` + (fresh ? " \u00B7 New lifts" : "") + " \u00B7 \u201C" + pick(STOIC)[0] + "\u201D");
+      } else {
+        toast(`Week ${startBlock.weekInBlock} complete. Now Week ${b.weekInBlock} of ${b.blockLen}.`);
+      }
     }
   }
 
@@ -910,7 +939,8 @@
   function blockLabelHtml(week) {
     const b = blockInfo(week);
     const isNew = b.weekInBlock === 1 && !(b.block === 1 && b.cycle === 1);
-    return `<span class="block-label">Rotation ${b.block} • Phase ${ROMAN[b.weekInBlock - 1] || b.weekInBlock} of ${ROMAN[b.blockLen - 1] || b.blockLen}</span>` +
+    const p = phaseMeta(b);
+    return `<span class="block-label">Phase ${p.roman} \u00B7 Week ${b.weekInBlock} of ${b.blockLen}</span>` +
       (isNew ? ` <span class="new-badge">New lifts!</span>` : "");
   }
 
@@ -1554,7 +1584,7 @@
     showHeld(q, a);
     try {
       if ("Notification" in window && Notification.permission === "granted") {
-        const opts = { body: "\u201C" + q + "\u201D \u2014 " + a, tag: "arete-held", icon: "./icon-192.png?v=23", badge: "./icon-192.png?v=23" };
+        const opts = { body: "\u201C" + q + "\u201D \u2014 " + a, tag: "arete-held", icon: "./icon-192.png?v=24", badge: "./icon-192.png?v=24" };
         if (navigator.serviceWorker && navigator.serviceWorker.ready) {
           navigator.serviceWorker.ready.then((reg) => reg.showNotification("You held the line.", opts)).catch(() => {});
         }
@@ -1771,7 +1801,7 @@
   function swNotify(title, opts) {
     try {
       if (!("Notification" in window) || Notification.permission !== "granted" || !navigator.serviceWorker) return;
-      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, Object.assign({ icon: "./icon-192.png?v=23", badge: "./icon-192.png?v=23" }, opts))).catch(() => {});
+      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, Object.assign({ icon: "./icon-192.png?v=24", badge: "./icon-192.png?v=24" }, opts))).catch(() => {});
     } catch (_) {}
   }
   function ciSchedule() {
@@ -1787,7 +1817,7 @@
           if (!c.enabled[k.id]) return;
           const ts = base.getTime() + dd * 86400000 + hm(c.times[k.id]) * 60000;
           if (ts <= Date.now() + 30000) return;
-          reg.showNotification("ARETE · " + k.label, { body: "Check-in due. Tap to open.", tag: "arete-ci-" + k.id + "-" + dd, icon: "./icon-192.png?v=23", data: { url: "./#checkin" }, showTrigger: new TimestampTrigger(ts) }).catch(() => {});
+          reg.showNotification("ARETE · " + k.label, { body: "Check-in due. Tap to open.", tag: "arete-ci-" + k.id + "-" + dd, icon: "./icon-192.png?v=24", data: { url: "./#checkin" }, showTrigger: new TimestampTrigger(ts) }).catch(() => {});
         });
       }).catch(() => {});
     } catch (_) {}
@@ -1927,14 +1957,21 @@
 
     const b = blockInfo(state.week);
     const cur = currentPhaseWeek(b);
-    setBg("hub", [cur ? "phase" + (((cur - b.firstWeek) % 3) + 1) : "phase1", "breath"]);
+    const p = phaseMeta(b);
+    const prog = phaseWorkouts(b);
+    const phaseDone = isPhaseComplete(b);
+    setBg(p.key, ["breath"]);
+    const weekNum = cur ? cur - b.firstWeek + 1 : prog.weekCount;
+    const phaseSub = phaseDone ? "Complete" : `Week ${weekNum} of ${prog.weekCount} \u00B7 ${prog.done}/${prog.total} workouts`;
     const banner = $("#block-banner");
+    banner.classList.toggle("phase-done", phaseDone);
     banner.innerHTML = `
-      <button type="button" class="block-nav" id="week-prev" aria-label="Previous rotation"${b.firstWeek <= 1 ? " disabled" : ""}>‹</button>
+      <button type="button" class="block-nav" id="week-prev" aria-label="Previous phase"${b.firstWeek <= 1 ? " disabled" : ""}>‹</button>
       <div class="block-text">
-        <div class="block-title">Rotation ${b.block}${b.cycle > 1 ? ` <span class="rot-cycle">· Cycle ${b.cycle}</span>` : ""}</div>
+        <div class="block-title">Phase ${p.roman} \u00B7 ${p.god.title}${b.cycle > 1 ? ` <span class="rot-cycle">\u00B7 Cycle ${b.cycle}</span>` : ""}${phaseDone ? " \u2713" : ""}</div>
+        <div class="block-sub">${phaseSub}</div>
       </div>
-      <button type="button" class="block-nav" id="week-next" aria-label="Next rotation"${b.lastWeek >= MAX_WEEK ? " disabled" : ""}>›</button>`;
+      <button type="button" class="block-nav" id="week-next" aria-label="Next phase"${b.lastWeek >= MAX_WEEK ? " disabled" : ""}>›</button>`;
     $("#week-prev").addEventListener("click", () => { setWeek(b.firstWeek - 1); renderHome(); });
     $("#week-next").addEventListener("click", () => { setWeek(b.lastWeek + 1); renderHome(); });
 
@@ -1943,18 +1980,16 @@
     const tiles = [];
     for (let w = b.firstWeek; w <= b.lastWeek; w++) {
       const i = w - b.firstWeek + 1;
-      const g = phaseGod(i);
       const done = isWeekComplete(w);
       const st = done ? "done" : w === cur ? "current" : "upcoming";
       const count = DAYS.filter((d) => isDayDone(d, w)).length;
       tiles.push(`
-      <button class="phase-tile ${st}" data-week="${w}" type="button" style="--god:${g.color}">
-        <span class="phase-art" style="background-image:url('${g.img}')" aria-hidden="true"></span>
-        <span class="phase-num">${ROMAN[i - 1] || i}</span>
+      <button class="phase-tile ${st}" data-week="${w}" type="button" style="--god:${p.god.color}">
+        <span class="phase-art" style="background-image:url('${p.god.img}')" aria-hidden="true"></span>
+        <span class="phase-num">${i}</span>
         <span class="phase-info">
-          <span class="phase-name">Phase ${ROMAN[i - 1] || i} <em>${g.title}</em></span>
-          <span class="phase-god">${g.god}</span>
-          <span class="phase-sub">${st === "done" ? "Complete" : st === "current" ? `Now · ${count}/${DAYS.length} done` : count ? `${count}/${DAYS.length} done` : "Ahead"}</span>
+          <span class="phase-name">Week ${i}</span>
+          <span class="phase-sub">${st === "done" ? "Complete" : st === "current" ? `Now \u00B7 ${count}/${DAYS.length} workouts` : count ? `${count}/${DAYS.length} workouts` : "Ahead"}</span>
         </span>
         <span class="phase-state" aria-hidden="true">${st === "done" ? "✓" : "›"}</span>
       </button>`);
@@ -1976,17 +2011,18 @@
 
   function renderPhase() {
     const w = state.week;
-    const { roman, b } = phaseLabel(w);
-    const g = phaseGod(b.weekInBlock);
+    const b = blockInfo(w);
+    const p = phaseMeta(b);
     showScreen("phase");
-    setHeader("Phase " + roman, false, true);
-    setBg("phase" + (((b.weekInBlock - 1) % 3) + 1), ["push", "pull", "legs"]);
+    setHeader("Week " + b.weekInBlock, false, true);
+    setBg(p.key, ["push", "pull", "legs"]);
     const isNew = b.weekInBlock === 1 && !(b.block === 1 && b.cycle === 1);
+    const weekDone = isWeekComplete(w);
     $("#phase-hero").innerHTML = `
-      <div class="phase-hero-god">${g.god}</div>
-      <h2 class="phase-hero-title">${g.title}</h2>
-      <p class="phase-hero-sub">${g.sub}</p>
-      <div class="phase-hero-meta">Rotation ${b.block} · Phase ${roman} of ${ROMAN[b.blockLen - 1] || b.blockLen}${isNew ? ` <span class="new-badge">New lifts!</span>` : ""}</div>`;
+      <div class="phase-hero-god">${p.god.god}</div>
+      <h2 class="phase-hero-title">${p.god.title}</h2>
+      <p class="phase-hero-sub">${p.god.sub}</p>
+      <div class="phase-hero-meta">Phase ${p.roman} \u00B7 Week ${b.weekInBlock} of ${b.blockLen}${weekDone ? " \u00B7 Complete" : ""}${isNew ? ` <span class="new-badge">New lifts!</span>` : ""}</div>`;
     const list = $("#phase-days");
     list.innerHTML = DAYS.map((d) => {
       const lifts = liftsFor(d, w);
@@ -3309,21 +3345,22 @@
 
     const b = blockInfo(state.week);
     const lifts = liftsFor(day, state.week);
-    const sk = GODS[day.type] && GODS[day.type].img ? day.type : "phase" + (((b.weekInBlock - 1) % 3) + 1);
+    const p = phaseMeta(b);
+    const sk = GODS[day.type] && GODS[day.type].img ? day.type : p.key;
     setBg(sk);
     $("#block-status").innerHTML = blockLabelHtml(state.week);
     const weekRow = $("#week-row");
     const weeks = [];
     for (let w = b.firstWeek; w <= b.lastWeek; w++) weeks.push(w);
     weekRow.innerHTML =
-      `<button type="button" class="week-btn block-jump" data-week="${b.firstWeek - 1}" aria-label="Previous rotation"${b.firstWeek <= 1 ? " disabled" : ""}>‹</button>` +
+      `<button type="button" class="week-btn block-jump" data-week="${b.firstWeek - 1}" aria-label="Previous phase"${b.firstWeek <= 1 ? " disabled" : ""}>‹</button>` +
       weeks
         .map(
           (w) =>
-            `<button type="button" class="week-btn${w === state.week ? " active" : ""}" data-week="${w}" aria-label="Phase ${ROMAN[w - b.firstWeek] || w - b.firstWeek + 1}">${ROMAN[w - b.firstWeek] || w - b.firstWeek + 1}</button>`
+            `<button type="button" class="week-btn${w === state.week ? " active" : ""}" data-week="${w}" aria-label="Week ${w - b.firstWeek + 1}">${w - b.firstWeek + 1}</button>`
         )
         .join("") +
-      `<button type="button" class="week-btn block-jump" data-week="${b.lastWeek + 1}" aria-label="Next rotation">›</button>`;
+      `<button type="button" class="week-btn block-jump" data-week="${b.lastWeek + 1}" aria-label="Next phase">›</button>`;
     $$(".week-btn", weekRow).forEach((btn) => {
       btn.addEventListener("click", () => {
         setWeek(parseInt(btn.dataset.week, 10));

@@ -911,6 +911,9 @@ body.entering .app { animation: appEnter 0.9s var(--ease) both; }
 .phase-tile.upcoming .phase-art { opacity: 0.55; filter: grayscale(0.4); }
 .rot-cycle { color: var(--text-muted); font-size: 0.8em; }
 .block-title { color: #f2ede4; }
+.block-sub { margin-top: 2px; font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-muted); }
+.block-banner.phase-done .block-sub { color: var(--god, var(--accent)); letter-spacing: 0.2em; }
+
 
 /* Phase view */
 .phase-hero { margin: 8px 0 18px; padding: 4px 0 4px 16px; border-left: 2px solid var(--god, var(--accent)); animation: rise 0.45s var(--ease) both; }
