@@ -1269,3 +1269,90 @@ body.ci-open { overflow: hidden; }
 .br-rate .btn-heavy { margin-top: 0; }
 .br-rate .mt-btn { min-height: 48px; }
 @media (prefers-reduced-motion: reduce) { .br-live-dot, .br-advance { animation: none; } }
+
+/* Meal Prep (Hestia · The Hearth) */
+.meal-slot { margin-top: 10px; }
+.meal-tile { --god: #e0b25a; }
+.meal-tile .phase-art { background-position: center 42%; opacity: 0.88; }
+.meal-num {
+  font-family: "Cinzel", Georgia, serif; color: var(--god);
+  border-color: color-mix(in srgb, var(--god) 55%, transparent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--god) 35%, transparent), inset 0 0 10px color-mix(in srgb, var(--god) 18%, transparent);
+}
+.meal-hero { margin-bottom: 16px; }
+.meal-note {
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--god, #e0b25a) 45%, var(--border));
+  background: linear-gradient(180deg, rgba(32, 28, 18, 0.78), rgba(18, 20, 24, 0.88));
+  box-shadow: var(--bevel), 0 0 22px color-mix(in srgb, var(--god, #e0b25a) 16%, transparent);
+  color: #e9e4dc;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+.meal-note b {
+  display: block;
+  margin-bottom: 6px;
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--god, #e0b25a);
+}
+.meal-card { margin: 0 0 12px; padding: 14px 16px 16px; border-radius: 10px; border: 1px solid var(--border); box-shadow: var(--bevel); }
+.meal-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.meal-total {
+  flex: none;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 1.25rem;
+  letter-spacing: 0.04em;
+  color: var(--god, #e0b25a);
+}
+.meal-kicker {
+  margin: 10px 0 6px;
+  font-size: 0.68rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.meal-list { margin: 0; padding: 0 0 0 18px; color: #e9e4dc; }
+.meal-list li + li { margin-top: 4px; }
+.meal-list.muted { color: var(--text-muted); }
+.meal-foot { margin: 12px 0 0; font-size: 0.82rem; color: var(--text-muted); line-height: 1.4; }
+.meal-checks { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.meal-check {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: rgba(8, 10, 13, 0.45); color: #e9e4dc; font-size: 0.92rem; line-height: 1.4;
+}
+.meal-check input {
+  flex: none; width: 20px; height: 20px; margin-top: 1px; accent-color: var(--god, #e0b25a);
+}
+.meal-check:has(input:checked) { border-color: color-mix(in srgb, var(--god, #e0b25a) 45%, var(--border)); }
+.meal-check:has(input:checked) span { color: var(--text-muted); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--god, #e0b25a) 50%, transparent); }
+.meal-day { scroll-margin-top: 76px; }
+.meal-day.today {
+  border-color: var(--god, #e0b25a);
+  box-shadow: var(--bevel), 0 0 0 1px var(--god, #e0b25a), 0 0 22px color-mix(in srgb, var(--god, #e0b25a) 28%, transparent);
+}
+.meal-day-name { font-family: "Cinzel", Georgia, serif; font-weight: 600; font-size: 1.15rem; letter-spacing: 0.06em; color: #f2ede4; }
+.meal-day-date { margin-top: 2px; font-size: 0.68rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-muted); }
+.meal-today-tag {
+  display: inline-block; margin-left: 6px; padding: 1px 7px;
+  font-family: var(--font); font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase;
+  color: #1a1408; background: var(--god, #e0b25a); border-radius: 99px; vertical-align: middle;
+}
+.meal-macros {
+  flex: none; text-align: right;
+  font-family: var(--display); font-weight: 600; font-size: 0.95rem; letter-spacing: 0.04em;
+  color: var(--god, #e0b25a);
+}
+.meal-slots { display: flex; flex-direction: column; }
+.meal-slot-row { padding: 10px 0; border-top: 1px solid var(--border); }
+.meal-slot-row:first-child { border-top: 0; }
+.meal-slot-label { font-size: 0.66rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-muted); }
+.meal-slot-name { margin-top: 2px; font-family: "Cinzel", Georgia, serif; font-weight: 600; font-size: 1.02rem; letter-spacing: 0.03em; color: #f2ede4; }
+.meal-slot-how { margin-top: 3px; font-size: 0.86rem; color: var(--text-muted); line-height: 1.4; }

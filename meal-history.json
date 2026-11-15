@@ -1,0 +1,48 @@
+{
+  "weeks": [
+    {
+      "id": "2026-11-15",
+      "start": "2026-11-15",
+      "end": "2026-11-21",
+      "label": "Sun Nov 15 – Sat Nov 21, 2026",
+      "groceryTotal": 16.43,
+      "notes": "Top-up week using a $16.43 cart plus staples already on hand. Repeats were expected this week. Starting Nov 20 payday, rotate meals weekly under a $125 grocery cap.",
+      "breakfasts": [
+        "overnight oats with PB, banana, and protein",
+        "egg-and-cheese burrito",
+        "overnight oats with PB, banana, and protein",
+        "egg-and-cheese burrito",
+        "overnight oats with PB, banana, and protein",
+        "egg-and-cheese burrito",
+        "overnight oats with PB, banana, and protein"
+      ],
+      "lunches": [
+        "chicken and rice bowl",
+        "protein oat bowl",
+        "chicken and rice bowl",
+        "protein oat bowl",
+        "chicken and rice bowl",
+        "protein oat bowl",
+        "chicken and rice bowl"
+      ],
+      "dinners": [
+        "beef tacos",
+        "chicken quesadilla",
+        "egg-and-cheese rice bowl",
+        "chicken quesadilla",
+        "beef and cheese rice bowl",
+        "egg-and-cheese rice bowl",
+        "egg-and-cheese rice bowl"
+      ],
+      "snacks": [
+        "protein shake with milk and PB",
+        "protein shake with milk and PB",
+        "protein shake with milk and PB",
+        "PB-banana tortilla roll-up and protein shake",
+        "protein shake with milk and PB",
+        "PB-banana tortilla roll-up and protein shake",
+        "protein shake with milk and PB"
+      ]
+    }
+  ]
+}
