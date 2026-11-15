@@ -10,17 +10,17 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="ARETE">
   <meta name="description" content="ARETE: 6-day push/pull/legs workout logger with rest timer and guided breathing">
-  <link rel="manifest" href="./manifest.webmanifest?v=26">
-  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=26">
-  <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=26">
-  <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png?v=26">
-  <link rel="icon" href="./favicon.ico?v=26" sizes="any">
+  <link rel="manifest" href="./manifest.webmanifest?v=27">
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=27">
+  <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=27">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png?v=27">
+  <link rel="icon" href="./favicon.ico?v=27" sizes="any">
   <link rel="preload" href="./img/cover.webp" as="image">
   <link rel="preload" href="./fonts/oswald-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="./fonts/cinzel-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="./fonts/cormorant-italic-latin.woff2" as="font" type="font/woff2" crossorigin>
   <title>ARETE</title>
-  <link rel="stylesheet" href="./styles.css?v=26">
+  <link rel="stylesheet" href="./styles.css?v=27">
 </head>
 <body>
   <div class="cover" id="cover" role="button" tabindex="0" aria-label="Enter ARETE">
@@ -56,7 +56,6 @@
         <div class="block-banner slim" id="block-banner"></div>
         <div class="day-grid" id="day-grid"></div>
         <div class="breath-slot" id="breath-tile"></div>
-        <div class="breath-slot meal-slot" id="meal-tile"></div>
         <div class="extras" id="extras" hidden>
           <div id="discipline-card"></div>
           <div id="screens-card"></div>
@@ -78,10 +77,6 @@
 
     <section class="screen" data-screen="breathrun">
       <div class="screen-body" id="breath-run"></div>
-    </section>
-
-    <section class="screen" data-screen="meals">
-      <div class="screen-body" id="meals-body"></div>
     </section>
 
     <section class="screen" data-screen="session">
@@ -137,6 +132,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script src="./app.js?v=26"></script>
+  <script src="./app.js?v=27"></script>
 </body>
 </html>

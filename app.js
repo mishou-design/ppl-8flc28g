@@ -792,7 +792,6 @@
     pull: { god: "Poseidon", img: "./img/bg-pull.webp", color: "#2ad4c0" },
     legs: { god: "Hermes", img: "./img/bg-legs.webp", color: "#f2c14e" },
     breath: { god: "Aeolus", title: "The Winds", sub: "Slow the breath. Command the calm.", img: "./img/bg-breath.webp", color: "#a8e6ff" },
-    meals: { god: "Hestia", title: "The Hearth", sub: "Fuel the work. Keep it simple.", img: "./img/bg-legs.webp", color: "#e0b25a" },
   };
   function phaseMeta(b) {
     const i = ((b.block - 1) % 3) + 1;
@@ -1590,7 +1589,7 @@
     showHeld(q, a);
     try {
       if ("Notification" in window && Notification.permission === "granted") {
-        const opts = { body: "\u201C" + q + "\u201D \u2014 " + a, tag: "arete-held", icon: "./icon-192.png?v=26", badge: "./icon-192.png?v=26" };
+        const opts = { body: "\u201C" + q + "\u201D \u2014 " + a, tag: "arete-held", icon: "./icon-192.png?v=27", badge: "./icon-192.png?v=27" };
         if (navigator.serviceWorker && navigator.serviceWorker.ready) {
           navigator.serviceWorker.ready.then((reg) => reg.showNotification("You held the line.", opts)).catch(() => {});
         }
@@ -1807,7 +1806,7 @@
   function swNotify(title, opts) {
     try {
       if (!("Notification" in window) || Notification.permission !== "granted" || !navigator.serviceWorker) return;
-      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, Object.assign({ icon: "./icon-192.png?v=26", badge: "./icon-192.png?v=26" }, opts))).catch(() => {});
+      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, Object.assign({ icon: "./icon-192.png?v=27", badge: "./icon-192.png?v=27" }, opts))).catch(() => {});
     } catch (_) {}
   }
   function ciSchedule() {
@@ -1823,7 +1822,7 @@
           if (!c.enabled[k.id]) return;
           const ts = base.getTime() + dd * 86400000 + hm(c.times[k.id]) * 60000;
           if (ts <= Date.now() + 30000) return;
-          reg.showNotification("ARETE · " + k.label, { body: "Check-in due. Tap to open.", tag: "arete-ci-" + k.id + "-" + dd, icon: "./icon-192.png?v=26", data: { url: "./#checkin" }, showTrigger: new TimestampTrigger(ts) }).catch(() => {});
+          reg.showNotification("ARETE · " + k.label, { body: "Check-in due. Tap to open.", tag: "arete-ci-" + k.id + "-" + dd, icon: "./icon-192.png?v=27", data: { url: "./#checkin" }, showTrigger: new TimestampTrigger(ts) }).catch(() => {});
         });
       }).catch(() => {});
     } catch (_) {}
@@ -1966,7 +1965,7 @@
     const p = phaseMeta(b);
     const prog = phaseWorkouts(b);
     const phaseDone = isPhaseComplete(b);
-    setBg(p.key, ["breath", "meals"]);
+    setBg(p.key, ["breath"]);
     const weekNum = cur ? cur - b.firstWeek + 1 : prog.weekCount;
     const phaseSub = phaseDone ? "Complete" : `Week ${weekNum} of ${prog.weekCount} \u00B7 ${prog.done}/${prog.total} workouts`;
     const banner = $("#block-banner");
@@ -2003,7 +2002,6 @@
     grid.innerHTML = tiles.join("");
     $$(".phase-tile", grid).forEach((btn) => btn.addEventListener("click", () => openPhase(parseInt(btn.dataset.week, 10))));
     renderBreathTile();
-    renderMealTile();
     renderDiscipline();
     renderScreens();
     renderSettings();
@@ -3037,236 +3035,6 @@
     renderBreathRun();
   }
 
-  // ---- Meal Prep (Hestia): weekly high-cal, high-protein plan ----
-  // Own storage under arete:mealPrep. meal-history.json is not loaded by the app.
-  const MEAL_PREP_KEY = STORAGE_PREFIX + "mealPrep";
-  const MEAL_WEEK = {
-    start: "2026-11-15",
-    end: "2026-11-21",
-    label: "Sun Nov 15 – Sat Nov 21",
-    note: "New meal plan every week. Starting Nov 20 (payday), meals change weekly so nothing gets old. High protein, high calorie, $125/week cap. A new plan is posted every Sunday with the grocery cart.",
-    groceryTotal: "$16.43",
-    ordered: [
-      "Rotisserie chicken",
-      "Large eggs, 18 count",
-      "Shredded cheddar, 16 oz",
-      "Flour tortillas, 10 count",
-      "Bananas, 6",
-    ],
-    onHand: [
-      "Ground beef, 1 lb",
-      "Peanut butter",
-      "Milk",
-      "Oats",
-      "Rice",
-      "Taco seasoning",
-      "Honey",
-      "Vanilla protein powder",
-    ],
-    prep: [
-      "Shred the rotisserie chicken and split into 6 boxes, about 4 oz each.",
-      "Brown the ground beef with taco seasoning. Split it in half: one half for tacos, one half for a rice bowl.",
-      "Cook a pot of rice (about 14 cups cooked for the week, or cook fresh every 2–3 days).",
-      "Mix 4 jars of overnight oats for Sun, Tue, Thu, and Sat.",
-      "Keep the eggs, cheese, tortillas, and bananas counted — the plan uses all of them by Saturday.",
-    ],
-    days: [
-      {
-        id: "2026-11-15", name: "Sunday", short: "Sun",
-        cal: 3480, pro: 210,
-        meals: [
-          { slot: "Breakfast", name: "Overnight oats with PB, banana, and protein", how: "1 cup oats, 1½ cups milk, 2 tbsp peanut butter, 1 scoop protein, 1 tbsp honey, 1 banana. Mix in a jar and chill." },
-          { slot: "Lunch", name: "Chicken and rice bowl", how: "Reheat 4 oz chicken with 2 cups rice. Top with 1 oz cheese until it melts." },
-          { slot: "Dinner", name: "Beef tacos", how: "Reheat half the seasoned beef (8 oz). Fill 3 warm tortillas and add 1½ oz cheese." },
-          { slot: "Snack", name: "Protein shake with milk and PB", how: "2 cups milk, 1 scoop protein, 2 tbsp peanut butter. Shake until smooth." },
-        ],
-      },
-      {
-        id: "2026-11-16", name: "Monday", short: "Mon",
-        cal: 3310, pro: 224,
-        meals: [
-          { slot: "Breakfast", name: "Egg-and-cheese burrito", how: "Scramble 3 eggs, add 1 oz cheese, wrap in 1 tortilla. Shake: 1½ cups milk, 1 scoop protein, 1 tbsp peanut butter." },
-          { slot: "Lunch", name: "Protein oat bowl", how: "1 cup oats, 1½ cups milk, 2 tbsp peanut butter, 1 scoop protein, 1 tbsp honey. Eat warm or cold." },
-          { slot: "Dinner", name: "Chicken quesadilla", how: "Warm 1 tortilla in a pan. Add 1½ oz cheese and 4 oz chicken, fold, and flip until melted. 2 cups rice on the side." },
-          { slot: "Snack", name: "Protein shake with milk and PB", how: "2 cups milk, 1 scoop protein, 2 tbsp peanut butter." },
-        ],
-      },
-      {
-        id: "2026-11-17", name: "Tuesday", short: "Tue",
-        cal: 3430, pro: 210,
-        meals: [
-          { slot: "Breakfast", name: "Overnight oats with PB, banana, and protein", how: "Same as Sunday: oats, milk, peanut butter, protein, honey, and 1 banana." },
-          { slot: "Lunch", name: "Chicken and rice bowl", how: "4 oz chicken, 2 cups rice, 1 oz cheese." },
-          { slot: "Dinner", name: "Egg-and-cheese rice bowl", how: "Scramble 3 eggs, stir in 1 oz cheese, serve over 3 cups rice. Drizzle honey if you want the extra calories." },
-          { slot: "Snack", name: "Protein shake with milk and PB", how: "2 cups milk, 2 scoops protein, 2 tbsp peanut butter." },
-        ],
-      },
-      {
-        id: "2026-11-18", name: "Wednesday", short: "Wed",
-        cal: 3500, pro: 227,
-        meals: [
-          { slot: "Breakfast", name: "Egg-and-cheese burrito", how: "3 eggs, 1 oz cheese, 1 tortilla, plus a shake (1½ cups milk, 1 scoop protein, 1 tbsp peanut butter)." },
-          { slot: "Lunch", name: "Protein oat bowl", how: "1 cup oats, 1½ cups milk, 2 tbsp peanut butter, 1 scoop protein, 1 tbsp honey." },
-          { slot: "Dinner", name: "Chicken quesadilla", how: "1 tortilla, 1½ oz cheese, 4 oz chicken, folded in a pan. 1½ cups rice on the side." },
-          { slot: "Snack", name: "PB-banana tortilla roll-up and a shake", how: "Spread 2 tbsp peanut butter on a tortilla, add 1 banana, drizzle honey, and roll. Shake: 1½ cups milk, 1 scoop protein." },
-        ],
-      },
-      {
-        id: "2026-11-19", name: "Thursday", short: "Thu",
-        cal: 3480, pro: 228,
-        meals: [
-          { slot: "Breakfast", name: "Overnight oats with PB, banana, and protein", how: "Same as Sunday: oats, milk, peanut butter, protein, honey, and 1 banana." },
-          { slot: "Lunch", name: "Chicken and rice bowl", how: "4 oz chicken, 2 cups rice, 1 oz cheese." },
-          { slot: "Dinner", name: "Beef and cheese rice bowl", how: "Reheat the other half of the seasoned beef (8 oz) with 1½ cups rice. Top with 1½ oz cheese." },
-          { slot: "Snack", name: "Protein shake with milk and PB", how: "2 cups milk, 2 scoops protein, 2 tbsp peanut butter." },
-        ],
-      },
-      {
-        id: "2026-11-20", name: "Friday", short: "Fri",
-        cal: 3410, pro: 210,
-        meals: [
-          { slot: "Breakfast", name: "Egg-and-cheese burrito", how: "3 eggs, 1 oz cheese, 1 tortilla, plus a shake (1½ cups milk, 1 scoop protein, 1 tbsp peanut butter)." },
-          { slot: "Lunch", name: "Protein oat bowl", how: "1 cup oats, 1½ cups milk, 2 tbsp peanut butter, 1 scoop protein, 1 tbsp honey." },
-          { slot: "Dinner", name: "Egg-and-cheese rice bowl", how: "Scramble 3 eggs, stir in 1 oz cheese, serve over 2 cups rice." },
-          { slot: "Snack", name: "PB-banana tortilla roll-up and a shake", how: "2 tbsp peanut butter, 1 banana, and a drizzle of honey in a tortilla. Shake: 1½ cups milk, 1 scoop protein." },
-        ],
-      },
-      {
-        id: "2026-11-21", name: "Saturday", short: "Sat",
-        cal: 3430, pro: 210,
-        meals: [
-          { slot: "Breakfast", name: "Overnight oats with PB, banana, and protein", how: "Last banana goes in this jar: oats, milk, peanut butter, protein, and honey." },
-          { slot: "Lunch", name: "Chicken and rice bowl", how: "Last 4 oz of chicken, 2 cups rice, 1 oz cheese." },
-          { slot: "Dinner", name: "Egg-and-cheese rice bowl", how: "Last 3 eggs, 1 oz cheese, over 3 cups rice. Drizzle honey if you want the extra calories." },
-          { slot: "Snack", name: "Protein shake with milk and PB", how: "2 cups milk, 2 scoops protein, 2 tbsp peanut butter." },
-        ],
-      },
-    ],
-  };
-
-  function mealTodayId() {
-    const d = new Date();
-    const z = (n) => String(n).padStart(2, "0");
-    return d.getFullYear() + "-" + z(d.getMonth() + 1) + "-" + z(d.getDate());
-  }
-  function mealPrepState() {
-    try {
-      const raw = JSON.parse(localStorage.getItem(MEAL_PREP_KEY) || "{}");
-      if (raw && raw.week === MEAL_WEEK.start && raw.checks) return raw;
-    } catch (e) { /* ignore bad local data */ }
-    return { week: MEAL_WEEK.start, checks: {} };
-  }
-  function mealSavePrep(state) {
-    localStorage.setItem(MEAL_PREP_KEY, JSON.stringify(state));
-  }
-  function mealFmt(n) {
-    return Number(n).toLocaleString("en-US");
-  }
-
-  function renderMealTile() {
-    const el = document.getElementById("meal-tile");
-    if (!el) return;
-    const today = mealTodayId();
-    const day = MEAL_WEEK.days.find((d) => d.id === today);
-    const sub = day
-      ? `${day.short} · ${mealFmt(day.cal)} cal · ${day.pro}g protein`
-      : `${MEAL_WEEK.label} · ~3,400 cal / day`;
-    el.innerHTML = `
-      <button class="phase-tile meal-tile${day ? " current" : ""}" id="open-meals" type="button" style="--god:${GODS.meals.color}">
-        <span class="phase-art" style="background-image:url('${GODS.meals.img}')" aria-hidden="true"></span>
-        <span class="phase-num meal-num" aria-hidden="true">Η</span>
-        <span class="phase-info">
-          <span class="phase-name">Meal Prep <em>${GODS.meals.title}</em></span>
-          <span class="phase-god">${GODS.meals.god}</span>
-          <span class="phase-sub">${esc(sub)}</span>
-        </span>
-        <span class="phase-state" aria-hidden="true">›</span>
-      </button>`;
-    $("#open-meals", el).addEventListener("click", openMeals);
-  }
-
-  function openMeals() {
-    history.replaceState(null, "", "#meals");
-    renderMeals();
-  }
-
-  function renderMeals() {
-    showScreen("meals");
-    setHeader("Meal Prep", false, true);
-    setBg("meals");
-    const el = document.getElementById("meals-body");
-    if (!el) return;
-    const today = mealTodayId();
-    const prep = mealPrepState();
-    const g = GODS.meals;
-    el.innerHTML = `
-      <div class="phase-hero meal-hero">
-        <div class="phase-hero-god">${g.god}</div>
-        <h2 class="phase-hero-title">${g.title}</h2>
-        <p class="phase-hero-sub">${g.sub}</p>
-        <div class="phase-hero-meta">${esc(MEAL_WEEK.label)} · ~3,400 cal · high protein</div>
-      </div>
-      <div class="meal-note" role="note">
-        <b>Weekly rotation</b>
-        ${esc(MEAL_WEEK.note)}
-      </div>
-      <div class="lift-card meal-card">
-        <div class="meal-card-head">
-          <div class="lift-name">This week’s groceries</div>
-          <div class="meal-total">${esc(MEAL_WEEK.groceryTotal)}</div>
-        </div>
-        <p class="meal-kicker">Picked up for this plan</p>
-        <ul class="meal-list">${MEAL_WEEK.ordered.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
-        <p class="meal-kicker">Already on hand</p>
-        <ul class="meal-list muted">${MEAL_WEEK.onHand.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
-        <p class="meal-foot">The plan uses only these foods. Portions are set so everything lasts through Saturday.</p>
-      </div>
-      <div class="lift-card meal-card">
-        <div class="lift-name">Prep checklist</div>
-        <p class="meal-kicker">Do this once, then just reheat and assemble</p>
-        <ul class="meal-checks">${MEAL_WEEK.prep.map((x, i) => {
-          const on = !!prep.checks[i];
-          return `<li>
-            <label class="meal-check">
-              <input type="checkbox" data-meal-prep="${i}"${on ? " checked" : ""}>
-              <span>${esc(x)}</span>
-            </label>
-          </li>`;
-        }).join("")}</ul>
-      </div>
-      ${MEAL_WEEK.days.map((d) => {
-        const isToday = d.id === today;
-        return `
-        <article class="lift-card meal-card meal-day${isToday ? " today" : ""}" id="meal-day-${d.id}">
-          <div class="meal-card-head">
-            <div>
-              <div class="meal-day-name">${esc(d.name)}${isToday ? ' <span class="meal-today-tag">Today</span>' : ""}</div>
-              <div class="meal-day-date">${esc(d.short)} · ${esc(d.id.slice(5).replace("-", "/"))}</div>
-            </div>
-            <div class="meal-macros">${mealFmt(d.cal)} cal · ${d.pro}g protein</div>
-          </div>
-          <div class="meal-slots">
-            ${d.meals.map((m) => `
-              <div class="meal-slot-row">
-                <div class="meal-slot-label">${esc(m.slot)}</div>
-                <div class="meal-slot-name">${esc(m.name)}</div>
-                <div class="meal-slot-how">${esc(m.how)}</div>
-              </div>`).join("")}
-          </div>
-        </article>`;
-      }).join("")}
-    `;
-    el.querySelectorAll("[data-meal-prep]").forEach((box) => {
-      box.addEventListener("change", () => {
-        const st = mealPrepState();
-        st.checks[box.getAttribute("data-meal-prep")] = box.checked;
-        mealSavePrep(st);
-      });
-    });
-    const todays = document.getElementById("meal-day-" + today);
-    if (todays) setTimeout(() => todays.scrollIntoView({ behavior: "smooth", block: "start" }), 200);
-  }
-
   function renderBreathTile() {
     const el = document.getElementById("breath-tile");
     if (!el) return;
@@ -3811,7 +3579,7 @@
       if (state.screen === "session") {
         history.replaceState(null, "", "#phase/" + state.week);
         renderPhase();
-      } else if (state.screen === "phase" || state.screen === "breath" || state.screen === "meals") {
+      } else if (state.screen === "phase" || state.screen === "breath") {
         history.replaceState(null, "", location.pathname + location.search);
         renderHome();
       } else if (state.screen === "breathrun") {
@@ -3835,8 +3603,6 @@
       openBreathRun();
     } else if (hash.startsWith("breath")) {
       openBreath();
-    } else if (hash.startsWith("meals") || hash === "meal" || hash === "mealprep") {
-      openMeals();
     } else if (m && getDay(m[1])) {
       openDay(m[1]);
     } else if (mp) {
