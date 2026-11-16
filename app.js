@@ -1038,17 +1038,25 @@
     } catch (_) {}
   }
 
-  let audioCtx = null;
+  let audioCtx = null, brBadSince = 0;
+  function brWireCtx(c) {
+    c.onstatechange = () => {
+      if (c !== audioCtx) return;
+      brBadSince = c.state === "running" ? 0 : (brBadSince || Date.now());
+      try { brSndState(); } catch (_) {}
+      try { if (typeof brAudioRecover === "function") brAudioRecover(); } catch (_) {}
+    };
+  }
   function ensureAudio() {
     try {
+      // iOS 17+: "playback" makes Web Audio ignore the ringer/silent switch. Set it BEFORE the context exists.
+      try { if (navigator.audioSession && navigator.audioSession.type !== "playback") navigator.audioSession.type = "playback"; } catch (_) {}
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
-      if (!audioCtx) {
+      if (!audioCtx || audioCtx.state === "closed") {
         audioCtx = new AC();
-        audioCtx.onstatechange = () => {
-          try { brSndState(); } catch (_) {}
-          try { if (typeof brAudioRecover === "function") brAudioRecover(); } catch (_) {}
-        };
+        brBadSince = audioCtx.state === "running" ? 0 : Date.now();
+        brWireCtx(audioCtx);
       }
       if (audioCtx.state !== "running") {
         // iOS: resume + a short silent buffer inside the tap unlocks output.
@@ -1589,7 +1597,7 @@
     showHeld(q, a);
     try {
       if ("Notification" in window && Notification.permission === "granted") {
-        const opts = { body: "\u201C" + q + "\u201D \u2014 " + a, tag: "arete-held", icon: "./icon-192.png?v=27", badge: "./icon-192.png?v=27" };
+        const opts = { body: "\u201C" + q + "\u201D \u2014 " + a, tag: "arete-held", icon: "./icon-192.png?v=28", badge: "./icon-192.png?v=28" };
         if (navigator.serviceWorker && navigator.serviceWorker.ready) {
           navigator.serviceWorker.ready.then((reg) => reg.showNotification("You held the line.", opts)).catch(() => {});
         }
@@ -1806,7 +1814,7 @@
   function swNotify(title, opts) {
     try {
       if (!("Notification" in window) || Notification.permission !== "granted" || !navigator.serviceWorker) return;
-      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, Object.assign({ icon: "./icon-192.png?v=27", badge: "./icon-192.png?v=27" }, opts))).catch(() => {});
+      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, Object.assign({ icon: "./icon-192.png?v=28", badge: "./icon-192.png?v=28" }, opts))).catch(() => {});
     } catch (_) {}
   }
   function ciSchedule() {
@@ -1822,7 +1830,7 @@
           if (!c.enabled[k.id]) return;
           const ts = base.getTime() + dd * 86400000 + hm(c.times[k.id]) * 60000;
           if (ts <= Date.now() + 30000) return;
-          reg.showNotification("ARETE · " + k.label, { body: "Check-in due. Tap to open.", tag: "arete-ci-" + k.id + "-" + dd, icon: "./icon-192.png?v=27", data: { url: "./#checkin" }, showTrigger: new TimestampTrigger(ts) }).catch(() => {});
+          reg.showNotification("ARETE · " + k.label, { body: "Check-in due. Tap to open.", tag: "arete-ci-" + k.id + "-" + dd, icon: "./icon-192.png?v=28", data: { url: "./#checkin" }, showTrigger: new TimestampTrigger(ts) }).catch(() => {});
         });
       }).catch(() => {});
     } catch (_) {}
@@ -2657,7 +2665,7 @@
     try { if (navigator.audioSession) navigator.audioSession.type = "auto"; } catch (_) {}
     try { if ("mediaSession" in navigator) { navigator.mediaSession.metadata = null; navigator.mediaSession.setActionHandler("pause", null); navigator.mediaSession.setActionHandler("play", null); } } catch (_) {}
   }
-  let brSpeakGen = 0, brResumeBusy = false;
+  let brSpeakGen = 0, brResumeBusy = false, brResumeAt = 0;
   function brAmbDuck(on) {
     if (!brAmb || !audioCtx) return;
     try {
@@ -2670,12 +2678,16 @@
   function brAudioRecover() {
     try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (_) {}
     try {
+      // On iOS a resume() promise can stay pending while the session is interrupted; never let that block later retries.
+      if (brResumeBusy && Date.now() - brResumeAt > 1200) brResumeBusy = false;
       if (audioCtx && audioCtx.state !== "running" && audioCtx.state !== "closed" && !brResumeBusy) {
-        brResumeBusy = true;
+        brResumeBusy = true; brResumeAt = Date.now();
+        if (!brBadSince) brBadSince = Date.now();
         const pr = audioCtx.resume();
         if (pr && pr.then) pr.then(() => { brResumeBusy = false; if (brSessionLive() && audioCtx && audioCtx.state === "running") brAudioRecover(); }).catch(() => { brResumeBusy = false; });
         else brResumeBusy = false;
       }
+      if (audioCtx && audioCtx.state === "running") brBadSince = 0;
     } catch (_) { brResumeBusy = false; }
     if (!brSessionLive()) return;
     brMediaOn();
@@ -2837,16 +2849,40 @@
     // Do not silent-speak here: speechSynthesis steals the iOS audio session from Web Audio.
     // Voice still unlocks from the first spoken cue in this same Start tap.
     brMediaOn();
+    if (audioCtx && audioCtx.state !== "running" && brBadSince && Date.now() - brBadSince > 3000) brRebuildCtx(); // fresh context inside the Start tap
     const pr = ensureAudio();
     brAmbStart();
     if (pr && pr.then) pr.then(() => { if (brPrefs().music) brAmbStart(); }).catch(() => {});
+    brWatchStart();
   }
   function brAudioPause() { brAmbStop(1.2); try { if (brCanSpeak()) speechSynthesis.cancel(); } catch (_) {} brMediaOff(); }
   function brAudioEnd(fade) { brAmbStop(fade || 2); try { if (brCanSpeak()) speechSynthesis.cancel(); } catch (_) {} setTimeout(() => { if (!brAmb) brMediaOff(); }, (fade || 2) * 1000 + 300); }
+  // A context that stays suspended/interrupted after lock, a call or speech can be wedged for good. Inside a tap, replace it.
+  function brRebuildCtx() {
+    const old = audioCtx;
+    try { if (brAmb) { const a = brAmb; brAmb = null; a.srcs.forEach((x) => { try { x.stop(); } catch (_) {} }); } } catch (_) { brAmb = null; }
+    audioCtx = null; brBadSince = 0; brResumeBusy = false;
+    try { if (old) { old.onstatechange = null; const c = old.close(); if (c && c.catch) c.catch(() => {}); } } catch (_) {}
+    ensureAudio();
+  }
   function brAudioKick() { // any tap on a live session: recover after reload / interruption
     if (!brSessionLive()) return;
-    brMediaOn(); ensureAudio();
+    brMediaOn();
+    if (audioCtx && audioCtx.state !== "running" && brBadSince && Date.now() - brBadSince > 3000) brRebuildCtx();
+    else ensureAudio();
     brAudioRecover();
+  }
+  // While a session is running, keep nudging a dropped context / paused keep-alive element back to life.
+  let brWatch = 0;
+  function brWatchStart() {
+    if (brWatch) return;
+    brWatch = setInterval(() => {
+      if (!brSessionLive()) { clearInterval(brWatch); brWatch = 0; return; }
+      if (document.hidden) return;
+      try { if (brSilentEl && brSilentEl.paused) { const pr = brSilentEl.play(); if (pr && pr.catch) pr.catch(() => {}); } } catch (_) {}
+      if (audioCtx && audioCtx.state === "running" && brAmb && brPrefs().music) return;
+      brAudioRecover();
+    }, 1500);
   }
   function brTestSound() {
     brMediaOn();
@@ -3023,7 +3059,8 @@
     if (brRun && !brRun.done) { if (!brRun.pausedAt) brWakeOn(); brEnsureTick(); }
   });
   window.addEventListener("pageshow", () => { if (brRun && !brRun.done) { brLastWall = 0; if (!brRun.pausedAt) brAudioRecover(); brTick(); } });
-  if (brRun && !brRun.done) { brLastWall = 0; brEnsureTick(); }
+  window.addEventListener("focus", () => { if (brSessionLive()) brAudioRecover(); });
+  if (brRun && !brRun.done) { brLastWall = 0; brEnsureTick(); brWatchStart(); }
 
   // ---- screens ----
   function openBreath() {
