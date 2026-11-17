@@ -1606,7 +1606,7 @@
     showHeld(q, a);
     try {
       if ("Notification" in window && Notification.permission === "granted") {
-        const opts = { body: "\u201C" + q + "\u201D \u2014 " + a, tag: "arete-held", icon: "./icon-192.png?v=29", badge: "./icon-192.png?v=29" };
+        const opts = { body: "\u201C" + q + "\u201D \u2014 " + a, tag: "arete-held", icon: "./icon-192.png?v=30", badge: "./icon-192.png?v=30" };
         if (navigator.serviceWorker && navigator.serviceWorker.ready) {
           navigator.serviceWorker.ready.then((reg) => reg.showNotification("You held the line.", opts)).catch(() => {});
         }
@@ -1823,7 +1823,7 @@
   function swNotify(title, opts) {
     try {
       if (!("Notification" in window) || Notification.permission !== "granted" || !navigator.serviceWorker) return;
-      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, Object.assign({ icon: "./icon-192.png?v=29", badge: "./icon-192.png?v=29" }, opts))).catch(() => {});
+      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, Object.assign({ icon: "./icon-192.png?v=30", badge: "./icon-192.png?v=30" }, opts))).catch(() => {});
     } catch (_) {}
   }
   function ciSchedule() {
@@ -1839,7 +1839,7 @@
           if (!c.enabled[k.id]) return;
           const ts = base.getTime() + dd * 86400000 + hm(c.times[k.id]) * 60000;
           if (ts <= Date.now() + 30000) return;
-          reg.showNotification("ARETE · " + k.label, { body: "Check-in due. Tap to open.", tag: "arete-ci-" + k.id + "-" + dd, icon: "./icon-192.png?v=29", data: { url: "./#checkin" }, showTrigger: new TimestampTrigger(ts) }).catch(() => {});
+          reg.showNotification("ARETE · " + k.label, { body: "Check-in due. Tap to open.", tag: "arete-ci-" + k.id + "-" + dd, icon: "./icon-192.png?v=30", data: { url: "./#checkin" }, showTrigger: new TimestampTrigger(ts) }).catch(() => {});
         });
       }).catch(() => {});
     } catch (_) {}
@@ -2661,6 +2661,7 @@
       if (!brAmb) brAmbStart();
       else brAmbDuck(false);
     }
+    brSchedCheck();
   }
   function brSpeak(text, force) {
     if (!brCanSpeak() || (!brArmed && !force)) return;
@@ -2756,23 +2757,89 @@
 
   // One soft cue per breath phase: rising for inhale, level for hold, falling for exhale.
   function brTone(freq0, freq1, dur, vol, delay) {
+    const ctx = audioCtx;
+    if (!ctx) return;
+    brToneAt(ctx.currentTime + 0.03 + (delay || 0), freq0, freq1, dur, vol, ctx.destination);
+  }
+  function brToneAt(t, freq0, freq1, dur, vol, dest) {
     try {
       const ctx = audioCtx;
-      if (!ctx) return;
-      const t = ctx.currentTime + 0.03 + (delay || 0);
+      if (!ctx) return null;
       const g = ctx.createGain(), o1 = ctx.createOscillator(), o2 = ctx.createOscillator(), g2 = ctx.createGain();
       o1.type = "sine"; o2.type = "sine";
       o1.frequency.setValueAtTime(freq0, t); o1.frequency.linearRampToValueAtTime(freq1, t + dur);
       o2.frequency.setValueAtTime(freq0 * 2, t); o2.frequency.linearRampToValueAtTime(freq1 * 2, t + dur);
       g2.gain.value = 0.3; // octave overtone so small phone speakers can reproduce it
-      o1.connect(g); o2.connect(g2); g2.connect(g); g.connect(ctx.destination);
+      o1.connect(g); o2.connect(g2); g2.connect(g); g.connect(dest || ctx.destination);
       const a = Math.min(0.3, dur * 0.35), r = Math.min(0.6, dur * 0.45);
       g.gain.setValueAtTime(0.0001, t);
       g.gain.linearRampToValueAtTime(vol, t + a);
       g.gain.setValueAtTime(vol, t + Math.max(a, dur - r));
       g.gain.linearRampToValueAtTime(0.0001, t + dur);
       o1.start(t); o2.start(t); o1.stop(t + dur + 0.05); o2.stop(t + dur + 0.05);
+      return { t, o: [o1, o2], g };
+    } catch (_) { return null; }
+  }
+  // ---- breath cue scheduler ----
+  // The breathing tones are scheduled ahead on the audio clock (same AudioContext as the ambient bed), so they keep
+  // time with the pattern without needing JS timers. Whenever the ambient bed is audible, the cues are too.
+  let brSched = null; // { ctx, bus, groups: [{t,o,g}], anchorCtx, anchorEl, chime }
+  function brSchedClear(grace) {
+    const sc = brSched;
+    brSched = null;
+    if (!sc) return;
+    try {
+      const now = sc.ctx.currentTime;
+      sc.groups.forEach((x) => { if (x.t > now + (grace || 0.01)) { x.o.forEach((o) => { try { o.stop(); } catch (_) {} }); try { x.g.disconnect(); } catch (_) {} } });
+      setTimeout(() => { try { sc.bus.disconnect(); } catch (_) {} }, 3500);
     } catch (_) {}
+  }
+  function brSchedBuild() {
+    brSchedClear();
+    const ctx = audioCtx;
+    if (!brArmed || !brSessionLive() || !ctx || ctx.state !== "running" || !brPrefs().tones) return;
+    try {
+      const bus = ctx.createGain(); bus.gain.value = brCueGain(); bus.connect(ctx.destination);
+      const elNow = brElapsed(), ctxNow = ctx.currentTime, total = BR_TOTAL * 1000;
+      const sc = { ctx, bus, groups: [], anchorCtx: ctxNow, anchorEl: elNow, chime: false };
+      const at = (el) => ctxNow + (el - elNow) / 1000;
+      let el = elNow, guard = 0;
+      // the current phase already cued by brCueFx/brBegin; start from the next boundary
+      while (el < total && guard++ < 2000) {
+        const st = brStatus(brRun, el);
+        if (!st) break;
+        let end;
+        if (st.ph.ph === "easy" || !st.ph.len) end = el + st.segLeft;
+        else end = el + Math.max(1, (1 - (st.ph.f || 0)) * st.ph.len * 1000);
+        end = Math.min(end, el + st.segLeft);
+        if (end >= total) break;
+        const nx = brStatus(brRun, end + 1);
+        if (nx && nx.ph.ph !== "easy" && nx.ph.len) {
+          const ph = nx.ph.ph, dur = Math.max(0.5, Math.min(2.6, nx.ph.len - 0.1)), t = at(end) + 0.03;
+          let gr = null;
+          if (ph === "in") gr = brToneAt(t, 392, 523.25, dur, 1, bus);
+          else if (ph === "top") gr = brToneAt(t, 587.33, 659.25, Math.min(dur, 0.8), 0.9, bus);
+          else if (ph === "out") gr = brToneAt(t, 523.25, 392, dur, 1, bus);
+          else if (ph === "hold") gr = brToneAt(t, 440, 440, Math.min(dur, 0.9), 0.6, bus);
+          if (gr) sc.groups.push(gr);
+        }
+        el = end + 1;
+      }
+      // closing chime at the end of the session
+      const tEnd = at(total) + 0.05;
+      [brToneAt(tEnd, 523.25, 523.25, 1.6, 1, bus), brToneAt(tEnd + 0.35, 783.99, 783.99, 2.2, 0.8, bus)].forEach((g) => { if (g) sc.groups.push(g); });
+      sc.chime = true;
+      brSched = sc;
+    } catch (_) { brSched = null; }
+  }
+  // Rebuild when missing or when the audio clock has drifted from the wall clock (e.g. after an interruption).
+  function brSchedCheck() {
+    if (!brArmed || !brSessionLive() || !brPrefs().tones) { if (brSched) brSchedClear(); return; }
+    const ctx = audioCtx;
+    if (!ctx || ctx.state !== "running") return;
+    if (!brSched || brSched.ctx !== ctx) return brSchedBuild();
+    const drift = (ctx.currentTime - brSched.anchorCtx) - (brElapsed() - brSched.anchorEl) / 1000;
+    if (Math.abs(drift) > 0.15) brSchedBuild();
   }
   const BR_SAY = { in: "Breathe in", top: "A little more", hold: "Hold", out: "Breathe out" };
   function brCueFx(phObj) {
@@ -2791,7 +2858,7 @@
       else if (ph === "out") brTone(523.25, 392, dur, v);
       else if (ph === "hold") brTone(440, 440, Math.min(dur, 0.9), v * 0.6);
     };
-    if (p.tones && audioCtx) {
+    if (p.tones && audioCtx && !brSched) {
       if (audioCtx.state !== "running") {
         const pr = audioCtx.resume();
         if (pr && pr.then) pr.then(playTones).catch(() => {});
@@ -2805,7 +2872,7 @@
     if (p.haptics) vibrate([40, 80, 40]);
     if (!brArmed || document.hidden) return;
     ensureAudio();
-    if (p.tones && audioCtx) { const v = brCueGain(); brTone(523.25, 523.25, 1.6, v); brTone(783.99, 783.99, 2.2, v * 0.8, 0.35); }
+    if (p.tones && audioCtx && !(brSched && brSched.chime)) { const v = brCueGain(); brTone(523.25, 523.25, 1.6, v); brTone(783.99, 783.99, 2.2, v * 0.8, 0.35); }
     if (p.voice) brSpeak("Session complete");
   }
   // Session-level helpers (call from a tap: Start, Resume, Test)
@@ -2817,16 +2884,18 @@
     if (audioCtx && audioCtx.state !== "running" && brBadSince && Date.now() - brBadSince > 3000) brRebuildCtx(); // fresh context inside the Start tap
     const pr = ensureAudio();
     brAmbStart();
-    if (pr && pr.then) pr.then(() => { if (brPrefs().music) brAmbStart(); }).catch(() => {});
+    if (pr && pr.then) pr.then(() => { if (brPrefs().music) brAmbStart(); setTimeout(brSchedCheck, 50); }).catch(() => {});
+    setTimeout(brSchedCheck, 50);
     brWatchStart();
   }
   function brWatchStop() { if (brWatch) { clearInterval(brWatch); brWatch = 0; } }
-  function brAudioPause() { brWatchStop(); brAmbStop(1.2); try { if (brCanSpeak()) speechSynthesis.cancel(); } catch (_) {} setTimeout(() => { if (!brAmb) brMediaOff(); }, 1500); }
-  function brAudioEnd(fade) { brWatchStop(); brArmed = false; brAmbStop(fade || 2); setTimeout(() => { try { if (brCanSpeak() && !brArmed) speechSynthesis.cancel(); } catch (_) {} if (!brAmb) brMediaOff(); }, (fade || 2) * 1000 + 1500); }
+  function brAudioPause() { brWatchStop(); brSchedClear(); brAmbStop(1.2); try { if (brCanSpeak()) speechSynthesis.cancel(); } catch (_) {} setTimeout(() => { if (!brAmb) brMediaOff(); }, 1500); }
+  function brAudioEnd(fade) { brWatchStop(); brArmed = false; brSchedClear(0.6); brAmbStop(fade || 2); setTimeout(() => { try { if (brCanSpeak() && !brArmed) speechSynthesis.cancel(); } catch (_) {} if (!brAmb) brMediaOff(); }, (fade || 2) * 1000 + 1500); }
   // A context that stays suspended/interrupted after lock, a call or speech can be wedged for good. Inside a tap, replace it.
   function brRebuildCtx() {
     const old = audioCtx;
     try { if (brAmb) { const a = brAmb; brAmb = null; a.srcs.forEach((x) => { try { x.stop(); } catch (_) {} }); } } catch (_) { brAmb = null; }
+    brSchedClear();
     audioCtx = null; brBadSince = 0; brResumeBusy = false;
     try { if (old) { old.onstatechange = null; const c = old.close(); if (c && c.catch) c.catch(() => {}); } } catch (_) {}
     ensureAudio();
@@ -2847,7 +2916,7 @@
     brWatch = setInterval(() => {
       if (!brSessionLive() || !brArmed) { clearInterval(brWatch); brWatch = 0; return; }
       if (document.hidden) return;
-      if (audioCtx && audioCtx.state === "running" && brAmb && brPrefs().music) return;
+      if (audioCtx && audioCtx.state === "running" && (brAmb || !brPrefs().music)) { brSchedCheck(); return; }
       brAudioRecover();
     }, 1500);
   }
@@ -2870,6 +2939,7 @@
     const live = brRun && !brRun.done && !brRun.pausedAt;
     if (el.checked && live && brArmed) ensureAudio();
     if (k === "music" && live) { if (el.checked) { brMediaOn(); brAmbStart(); } else brAmbStop(1); }
+    if (k === "tones") { if (el.checked && live && brArmed) brSchedCheck(); else brSchedClear(); }
     if (k === "voice" && !el.checked) { try { if (brCanSpeak()) speechSynthesis.cancel(); } catch (_) {} }
     if (k === "haptics" && el.checked) vibrate(30);
     document.querySelectorAll(`[data-br-pref="${k}"]`).forEach((x) => { x.checked = el.checked; });
@@ -2878,6 +2948,7 @@
   function brOnVol(el) {
     const p = brPrefs(); p[el.dataset.brVol] = Math.max(0, Math.min(1, parseFloat(el.value) / 100)); brSavePrefs(p);
     document.querySelectorAll(`[data-br-vol="${el.dataset.brVol}"]`).forEach((x) => { if (x !== el) x.value = el.value; });
+    if (el.dataset.brVol === "cueVol" && brSched && audioCtx) { try { brSched.bus.gain.setTargetAtTime(brCueGain(), audioCtx.currentTime, 0.05); } catch (_) {} }
     if (brAmb && audioCtx) { try { brAmb.master.gain.cancelScheduledValues(audioCtx.currentTime); brAmb.master.gain.setTargetAtTime(Math.max(0.0001, brAmbLevel()), audioCtx.currentTime, 0.05); } catch (_) {} }
   }
   function brSoundHtml(pr) {
@@ -2947,7 +3018,7 @@
   }
   function brEase() {
     if (!brRun || brRun.done || brRun.easeAt != null) return;
-    brRun.easeAt = brElapsed(); brPersistRun(); brPaint(); toast("Eased to 5/5. Same session, still counts.");
+    brRun.easeAt = brElapsed(); brPersistRun(); brSchedBuild(); brPaint(); toast("Eased to 5/5. Same session, still counts.");
   }
   function brEnd() {
     if (!brRun) return;
@@ -3019,7 +3090,7 @@
   }
   document.addEventListener("visibilitychange", () => {
     if (!brRun || brRun.done) return;
-    if (document.hidden) { brPersistRun(); brAmbStop(0.3); audioSuspend(); return; }
+    if (document.hidden) { brPersistRun(); return; } // keep ambient + scheduled cues going; only End/Pause stops them
     brLastWall = 0; // force a silent resync
     if (!brRun.pausedAt) brAudioRecover();
     brTick();
@@ -3593,7 +3664,7 @@
     bindTimerControls();
     bindVideoSheet();
     document.addEventListener("pointerdown", ripple);
-    document.addEventListener("visibilitychange", () => { if (document.hidden) audioSuspend(); return document.hidden ? onHidden() : onVisible(); });
+    document.addEventListener("visibilitychange", () => { if (document.hidden && !(brArmed && brSessionLive())) audioSuspend(); return document.hidden ? onHidden() : onVisible(); });
     window.addEventListener("pagehide", onHidden);
     window.addEventListener("pageshow", () => resyncTimer(false));
     window.addEventListener("focus", () => resyncTimer(false));
